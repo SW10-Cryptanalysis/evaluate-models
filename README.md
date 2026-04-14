@@ -17,3 +17,11 @@ Evaluations are triggered via SLURM. The SLURM script automatically synchronizes
 **Standard Execution:**
 ```bash
 sbatch eval.slurm --model_path /path/to/model
+```
+
+**Examples:**
+```bash
+sbatch eval_fast.slurm --model_path outputs/checkpoint-16750
+
+sbatch eval_fast.slurm --model_path outputs/checkpoint-16750 --spaces
+```
