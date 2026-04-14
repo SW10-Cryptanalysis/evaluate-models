@@ -1,20 +1,20 @@
 [project]
 name = "evaluate-models"
 version = "0.1.0"
-description = "Add your description here"
+description = "Evaluation pipeline for joint-sequence homophonic cipher modeling"
 readme = "README.md"
 requires-python = ">=3.12, <3.13"
 dependencies = [
     "datasets>=4.8.4",
     "easy-logging>=0.0.1",
     "torch==2.9.0",
-    "transformers>=4.56.0",
-    "vllm>=0.10.0; sys_platform != 'darwin' or platform_machine != 'x86_64'",
+    "vllm>=0.13.0; sys_platform == 'linux'",
 ]
 
 [tool.uv]
 environments = [
   "sys_platform == 'linux'",
+  "sys_platform == 'win32'",
   "sys_platform == 'darwin' and platform_machine == 'arm64'",
   "sys_platform == 'darwin' and platform_machine == 'x86_64'",
 ]
