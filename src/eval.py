@@ -9,7 +9,7 @@ from vllm import LLM, SamplingParams
 from easy_logging import EasyFormatter
 
 from src.classes.config import Config
-import eval_utils
+from src import eval_utils
 
 handler = logging.StreamHandler()
 handler.setFormatter(EasyFormatter())
