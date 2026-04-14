@@ -23,11 +23,11 @@ echo "GPUs available: $(nvidia-smi --list-gpus | wc -l)" | tee -a $LOG_FILE
 export PATH="$HOME/.local/bin:$PATH"
 
 # vLLM/Distributed Training Optimizations
-# Prevent HuggingFace tokenizers from causing deadlocks in distributed setups
 export TOKENIZERS_PARALLELISM=false
-# Essential for multi-GPU NCCL communication on L4s
 export NCCL_IGNORE_DISABLED_P2P=1 
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
+
+export VLLM_USE_V1=0
 
 echo "Syncing environment..." | tee -a $LOG_FILE
 uv sync
