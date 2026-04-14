@@ -21,7 +21,7 @@ sbatch eval.slurm --model_path /path/to/model
 
 **Examples:**
 ```bash
-sbatch eval_fast.slurm --model_path outputs/checkpoint-16750
+sbatch eval.slurm --model_path outputs/checkpoint-16750
 
-sbatch eval_fast.slurm --model_path outputs/checkpoint-16750 --spaces
+sbatch eval.slurm --model_path outputs/checkpoint-16750 --spaces
 ```
