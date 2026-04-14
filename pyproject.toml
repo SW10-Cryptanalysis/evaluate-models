@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12, <3.13"
 dependencies = [
     "datasets>=4.8.4",
-    "easy-logging>=0.0.1",
+    "easy-logging-formatter>=0.1.1",
     "torch==2.9.0",
     "vllm>=0.13.0; sys_platform == 'linux'",
 ]
