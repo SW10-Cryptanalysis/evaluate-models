@@ -6,7 +6,7 @@ from easy_logging import EasyFormatter
 from pathlib import Path
 
 MAX_TEXT_LEN = 10_000
-UNIQUE_HOMOPHONE_COUNT = 500
+UNIQUE_HOMOPHONE_COUNT = 2503
 UNIQUE_LETTER_COUNT = 26
 TOTAL_SEQ = MAX_TEXT_LEN * 2
 BUFFER = 8
@@ -137,3 +137,9 @@ class Config:
                 logger.warning(f"Error: {e}")
 
         self.vocab_size = self.char_offset + 26 + 1
+        logger.info(
+            f"Config initialized: unique_homophones={self.unique_homophones}, sep_token_id={self.sep_token_id}, space_token_id={self.space_token_id}, bos_token_id={self.bos_token_id}, eos_token_id={self.eos_token_id}, char_offset={self.char_offset}, vocab_size={self.vocab_size}",
+        )
+        logger.info(
+            f"Max len set to {self.max_context} based on use_spaces={self.use_spaces}"
+        )
