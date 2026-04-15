@@ -28,7 +28,6 @@ export PATH="$HOME/.local/bin:$PATH"
 export TOKENIZERS_PARALLELISM=false
 export NCCL_IGNORE_DISABLED_P2P=1
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
-export VLLM_USE_V1=0
 
 # -------------------------------------------------------------------
 # 2. HPC Storage Mitigation: Redirect Temp/Cache to Ceph
