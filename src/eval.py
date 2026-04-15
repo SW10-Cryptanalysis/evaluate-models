@@ -1,7 +1,3 @@
-import os
-
-os.environ["VLLM_USE_V1"] = "0"
-
 import argparse
 import json
 import logging
@@ -42,27 +38,6 @@ class VLLMCipherEvaluator:
         self.world_size = torch.cuda.device_count()
         if self.world_size == 0:
             raise RuntimeError("vLLM requires CUDA devices, but none were found.")
-
-    def _build_logits_processor(self, vocab_size: int):
-        """
-        Constructs a highly optimized tensor-based logits processor.
-        Forces the model to only output valid plaintext characters, collapsing
-        the non-determinism of the homophonic mapping space.
-        """
-        allowed_tensor = torch.tensor(
-            [t for t in self.allowed_token_ids if t < vocab_size], dtype=torch.long
-        )
-
-        def restrict_vocab(
-            prompt_tokens, output_tokens, logits: torch.Tensor
-        ) -> torch.Tensor:
-            mask = torch.full_like(logits, float("-inf"))
-            # Move tensor to the current logits device to avoid runtime clashes
-            local_allowed = allowed_tensor.to(logits.device)
-            mask.scatter_(0, local_allowed, 0.0)
-            return logits + mask
-
-        return restrict_vocab
 
     def parse_samples(self):
         """Extract prompt token IDs (up to SEP) and target lengths."""
@@ -108,6 +83,7 @@ class VLLMCipherEvaluator:
             if llm.get_tokenizer()
             else self.config.vocab_size
         )
+
         eval_utils.run_preflight_checks(
             self.config,
             self.dataset,
@@ -117,7 +93,8 @@ class VLLMCipherEvaluator:
             logger,
         )
 
-        logits_processor_fn = self._build_logits_processor(vocab_size)
+        valid_allowed_ids = [t for t in self.allowed_token_ids if t < vocab_size]
+
         parsed_samples = self.parse_samples()
 
         # Sort by target length for efficient continuous batching in vLLM
@@ -128,12 +105,13 @@ class VLLMCipherEvaluator:
 
         for sample in parsed_samples:
             prompts.append({"prompt_token_ids": sample["prompt_ids"]})
-            # Equal Loss Weighting mirror: We force exact target_length generation
+
+            # Pass the allowed_token_ids directly to SamplingParams
             sp = SamplingParams(
                 temperature=0.0,
                 max_tokens=sample["target_length"],
                 min_tokens=sample["target_length"],
-                logits_processors=[logits_processor_fn],
+                allowed_token_ids=valid_allowed_ids,
             )
             sampling_params_list.append(sp)
 
