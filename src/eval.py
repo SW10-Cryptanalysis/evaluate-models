@@ -97,6 +97,8 @@ class VLLMCipherEvaluator:
 
         parsed_samples = self.parse_samples()
 
+        # parsed_samples.sort(key=lambda x: x["target_length"], reverse=True)
+
         prompts = []
         sampling_params_list = []
         sp_cache: dict[int, SamplingParams] = {}
