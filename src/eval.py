@@ -97,9 +97,6 @@ class VLLMCipherEvaluator:
 
         parsed_samples = self.parse_samples()
 
-        # Sort by target length for efficient continuous batching in vLLM
-        parsed_samples.sort(key=lambda x: x["target_length"])
-
         prompts = []
         sampling_params_list = []
 
@@ -112,6 +109,8 @@ class VLLMCipherEvaluator:
                 max_tokens=sample["target_length"],
                 min_tokens=sample["target_length"],
                 allowed_token_ids=valid_allowed_ids,
+                detokenize=False,
+                ignore_eos=True,
             )
             sampling_params_list.append(sp)
 
