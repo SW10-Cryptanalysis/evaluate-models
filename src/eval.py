@@ -101,21 +101,18 @@ class VLLMCipherEvaluator:
 
         prompts = []
         sampling_params_list = []
-        sp_cache: dict[int, SamplingParams] = {}
 
         for sample in parsed_samples:
             tl = sample["target_length"]
-            if tl not in sp_cache:
-                sp_cache[tl] = SamplingParams(
-                    temperature=0.0,
-                    max_tokens=tl,
-                    min_tokens=tl,
-                    allowed_token_ids=valid_allowed_ids,
-                    detokenize=False,
-                    ignore_eos=True,
-                )
+            sp = SamplingParams(
+                temperature=0.0,
+                max_tokens=tl,
+                min_tokens=tl,
+                allowed_token_ids=valid_allowed_ids,
+                detokenize=False,
+            )
             prompts.append({"prompt_token_ids": sample["prompt_ids"]})
-            sampling_params_list.append(sp_cache[tl])
+            sampling_params_list.append(sp)
 
         logger.info(f"Launching batched inference for {len(prompts)} sequences...")
         start_time = time.perf_counter()
