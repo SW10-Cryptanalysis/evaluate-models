@@ -29,6 +29,14 @@ class VLLMCipherEvaluator:
         self.config = Config()
         self.config.use_spaces = use_spaces
         self.config.load_homophones()
+        if not self.config.is_valid_init:
+            raise ValueError(
+                f"CRITICAL CONFIG ERROR: dimension was not initialized properly!\n"
+                f"vocab_size: {self.config.vocab_size}\n"
+                f"max_context: {self.config.max_context}\n"
+                f"unique_homophones: {self.config.unique_homophones}\n"
+                f"Check the Config class and load_homophones() method.",
+            )
 
         self.output_log_path = Path(self.model_path) / "evaluation_results.jsonl"
         self.dataset = load_from_disk(self.config.tokenized_dir / "Test")

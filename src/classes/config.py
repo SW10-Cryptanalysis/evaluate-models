@@ -5,10 +5,9 @@ import logging
 from easy_logging import EasyFormatter
 from pathlib import Path
 
-MAX_TEXT_LEN = 10_000
-UNIQUE_HOMOPHONE_COUNT = 2503
+MAX_PLAIN_SPACES = 13077
+MAX_PLAIN_NORMAL = 10063
 UNIQUE_LETTER_COUNT = 26
-TOTAL_SEQ = MAX_TEXT_LEN * 2
 BUFFER = 8
 
 OUTPUT_DIR = Path(__file__).parent.parent.parent / "outputs"
@@ -51,16 +50,14 @@ class Config:
 
     # ARCHITECTURE
 
-    # Default value is UNIQUE_HOMOPHONE_COUNT unless a HOMOPHONE_FILE exists
-    unique_homophones: int = UNIQUE_HOMOPHONE_COUNT
+    unique_homophones: int = 0
     unique_letters: int = UNIQUE_LETTER_COUNT
     pad_token_id: int = 0
 
     # Vocab needs to be larger than unique homophone count + unique letter count
     # + buffer (start/end/padding, etc) and maybe spacing "_"
-    vocab_size: int = UNIQUE_HOMOPHONE_COUNT + UNIQUE_LETTER_COUNT + BUFFER
+    vocab_size: int = 0
     # Input is BOS + ciphertext + SEP + plaintext + EOS
-    max_context: int = TOTAL_SEQ + 3
     dims: int = 384
     layers: int = 16
     att_heads: int = 6
@@ -99,6 +96,15 @@ class Config:
         """Character ofset to avoid clashes with defined tokens."""
         return self.eos_token_id + 1
 
+    @property
+    def is_valid_init(self) -> bool:
+        """Is valid based on initialization."""
+        return (
+            self.vocab_size != 0
+            and self.max_context != 0
+            and self.unique_homophones != 0
+        )
+
     # TRAINING
     batch_size: int = 16
     grad_accum: int = 1
@@ -111,6 +117,13 @@ class Config:
     # SYSTEM
     output_dir: Path = OUTPUT_DIR
     data_dir: Path = DATA_DIR
+
+    @property
+    def max_context(self) -> int:
+        """Calculate dynamic variables after the dataclass is initialized."""
+        if self.use_spaces:
+            return (MAX_PLAIN_SPACES * 2) + BUFFER
+        return (MAX_PLAIN_NORMAL * 2) + BUFFER
 
     @property
     def tokenized_dir(self) -> Path:
