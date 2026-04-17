@@ -74,10 +74,9 @@ class VLLMCipherEvaluator:
             tensor_parallel_size=self.world_size,
             dtype="bfloat16",
             max_model_len=self.config.max_context,
-            enforce_eager=False,
-            gpu_memory_utilization=0.95,
-            disable_log_stats=True,
-            enable_prefix_caching=False,  # All prompts are unique; this saves overhead
+            enforce_eager=False,  # Use CUDA graphs
+            gpu_memory_utilization=0.95,  # Maximize memory for PagedAttention
+            enable_prefix_caching=False,  # Disable prefix caching to save memory, as we have unique prompts
         )
 
         vocab_size = (
@@ -96,46 +95,36 @@ class VLLMCipherEvaluator:
         )
 
         valid_allowed_ids = [t for t in self.allowed_token_ids if t < vocab_size]
+
         parsed_samples = self.parse_samples()
 
-        bucketed: dict[int, list] = defaultdict(list)
+        # parsed_samples.sort(key=lambda x: x["target_length"], reverse=True)
+
+        prompts = []
+        sampling_params_list = []
+
         for sample in parsed_samples:
-            bucket = eval_utils.closest_n(sample["target_length"])
-            bucketed[bucket].append(sample)
-
-        all_outputs: list[tuple] = []  # (sample, output)
-        start_time = time.perf_counter()
-
-        for bucket_n in sorted(bucketed.keys(), reverse=True):
-            bucket_samples = bucketed[bucket_n]
-            logger.info(
-                f"Bucket N={bucket_n}: {len(bucket_samples)} sequences "
-                f"(target_length range: "
-                f"{min(s['target_length'] for s in bucket_samples)}"
-                f"–{max(s['target_length'] for s in bucket_samples)})"
-            )
-
-            prompts = [{"prompt_token_ids": s["prompt_ids"]} for s in bucket_samples]
-            # All sequences in this bucket share the same target length (bucket_n)
+            tl = sample["target_length"]
             sp = SamplingParams(
                 temperature=0.0,
-                max_tokens=bucket_n,
-                min_tokens=bucket_n,
+                max_tokens=tl,
+                min_tokens=tl,
                 allowed_token_ids=valid_allowed_ids,
                 detokenize=False,
             )
+            prompts.append({"prompt_token_ids": sample["prompt_ids"]})
+            sampling_params_list.append(sp)
 
-            outputs = llm.generate(prompts, sampling_params=sp)
-            all_outputs.extend(zip(bucket_samples, outputs))
+        logger.info(f"Launching batched inference for {len(prompts)} sequences...")
+        start_time = time.perf_counter()
+
+        # vLLM handles all batching and multiprocessing automatically
+        outputs = llm.generate(prompts, sampling_params=sampling_params_list)
 
         generation_time = time.perf_counter() - start_time
         logger.info(f"Inference complete in {generation_time:.2f} seconds.")
 
-        parsed_samples_ordered = [s for s, _ in all_outputs]
-        outputs_ordered = [o for _, o in all_outputs]
-        return self.process_outputs(
-            parsed_samples_ordered, outputs_ordered, generation_time
-        )
+        return self.process_outputs(parsed_samples, outputs, generation_time)
 
     def process_outputs(self, parsed_samples, outputs, total_time):
         all_results = []
