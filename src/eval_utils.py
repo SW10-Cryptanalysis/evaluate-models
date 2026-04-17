@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 
-from src.classes.config import Config
+from src.classes.config import EvalConfig
 
 _N_BUCKETS: list[int] = [350, 400, 450, 600, 800, 1000, 2000, 4000, 6000, 8000, 10000]
 
@@ -11,7 +11,7 @@ def closest_n(length: int) -> int:
     return min(_N_BUCKETS, key=lambda n: abs(n - length))
 
 
-def build_allowed_token_ids(config: Config) -> list[int]:
+def build_allowed_token_ids(config: EvalConfig) -> list[int]:
     """
     Build the list of token IDs corresponding to latin alphabet characters a-z.
     This collapses the symbol space for dynamic key-recovery.
@@ -25,7 +25,7 @@ def build_allowed_token_ids(config: Config) -> list[int]:
     return ids
 
 
-def decode_prediction(ids: list[int], config: Config) -> str:
+def decode_prediction(ids: list[int], config: EvalConfig) -> str:
     """Convert model token IDs back into a plaintext string based on config."""
     chars = []
     for idx in ids:
@@ -38,7 +38,7 @@ def decode_prediction(ids: list[int], config: Config) -> str:
     return "".join(chars)
 
 
-def decode_ciphertext(ids: list[int], config: Config) -> str:
+def decode_ciphertext(ids: list[int], config: EvalConfig) -> str:
     """Convert integer cipher IDs back to a space-separated string."""
     excluded = {config.bos_token_id, config.sep_token_id}
     return " ".join(str(idx) for idx in ids if idx not in excluded)
@@ -53,7 +53,7 @@ def calculate_ser(true_plain: str, pred_plain: str) -> float:
 
 
 def run_preflight_checks(
-    config: Config,
+    config: EvalConfig,
     dataset,
     allowed_token_ids: list[int],
     output_log_path: Path,
