@@ -1,5 +1,6 @@
 import argparse
 import logging
+import json
 from pathlib import Path
 from easy_logging import EasyFormatter
 
@@ -7,7 +8,7 @@ from easy_logging import EasyFormatter
 from tokenizers import Tokenizer, models
 from transformers import PreTrainedTokenizerFast
 
-from src.classes.config import Config
+from src.classes.config import EvalConfig
 
 handler = logging.StreamHandler()
 handler.setFormatter(EasyFormatter())
@@ -23,33 +24,19 @@ def create_hf_tokenizer(model_path: str):
     raw token ID generation logic.
     """
     logger.info(f"Loading configuration for tokenizer export...")
-    config = Config()
+    save_dir = Path(model_path)
 
-    # We must set data_dir to where metadata.json actually is if necessary,
-    # but Config() handles loading homophones if the path is correct.
-    config.load_homophones()
+    # Read the actual vocab_size the model was trained with
+    model_config_path = save_dir / "config.json"
+    with open(model_config_path) as f:
+        model_config = json.load(f)
+    actual_vocab_size = model_config["vocab_size"]  # Will be 2560
 
-    # 1. Build a strict vocabulary dictionary mapping strings to your token integers
+    config = EvalConfig.from_model_path(model_path=model_path, use_spaces=True)
+
     vocab = {}
-
-    # Pre-fill the entire vocabulary space to ensure vLLM dimensional checks pass
-    for i in range(config.vocab_size):
+    for i in range(actual_vocab_size):  # Use 2560, not 2535
         vocab[f"[unused_{i}]"] = i
-
-    # Overwrite known structural tokens based on your mapping logic
-    vocab["[PAD]"] = config.pad_token_id
-    vocab["[SEP]"] = config.sep_token_id
-    vocab["[SPACE]"] = config.space_token_id
-    vocab["[BOS]"] = config.bos_token_id
-    vocab["[EOS]"] = config.eos_token_id
-
-    # We place the [UNK] token at the very end of the allocated buffer
-    unk_token_id = config.vocab_size - 1
-    vocab["[UNK]"] = unk_token_id
-
-    # Add latin alphabet mapping for completeness
-    for i, char in enumerate("abcdefghijklmnopqrstuvwxyz"):
-        vocab[char] = config.char_offset + i
 
     # 2. Initialize the base Tokenizer using the WordLevel model
     # WordLevel is perfectly suited for 1:1 symbol-to-integer cipher models

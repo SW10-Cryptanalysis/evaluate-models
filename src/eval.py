@@ -2,13 +2,14 @@ import argparse
 import json
 import logging
 import time
-from pathlib import Path
 import torch
+from pathlib import Path
+from collections import defaultdict
 from datasets import load_from_disk
 from vllm import LLM, SamplingParams
 from easy_logging import EasyFormatter
 
-from src.classes.config import Config
+from src.classes.config import EvalConfig
 from src import eval_utils
 
 handler = logging.StreamHandler()
@@ -26,17 +27,8 @@ class VLLMCipherEvaluator:
 
     def __init__(self, model_path: str, use_spaces: bool):
         self.model_path = model_path
-        self.config = Config()
+        self.config = EvalConfig.from_model_path(model_path, use_spaces)
         self.config.use_spaces = use_spaces
-        self.config.load_homophones()
-        if not self.config.is_valid_init:
-            raise ValueError(
-                f"CRITICAL CONFIG ERROR: dimension was not initialized properly!\n"
-                f"vocab_size: {self.config.vocab_size}\n"
-                f"max_context: {self.config.max_context}\n"
-                f"unique_homophones: {self.config.unique_homophones}\n"
-                f"Check the Config class and load_homophones() method.",
-            )
 
         self.output_log_path = Path(self.model_path) / "evaluation_results.jsonl"
         self.dataset = load_from_disk(self.config.tokenized_dir / "Test")
@@ -82,8 +74,10 @@ class VLLMCipherEvaluator:
             tensor_parallel_size=self.world_size,
             dtype="bfloat16",
             max_model_len=self.config.max_context,
-            enforce_eager=False,  # Use CUDA graphs
-            gpu_memory_utilization=0.95,  # Maximize memory for PagedAttention
+            enforce_eager=False,
+            gpu_memory_utilization=0.95,
+            disable_log_stats=True,
+            enable_prefix_caching=False,  # All prompts are unique; this saves overhead
         )
 
         vocab_size = (
@@ -102,36 +96,46 @@ class VLLMCipherEvaluator:
         )
 
         valid_allowed_ids = [t for t in self.allowed_token_ids if t < vocab_size]
-
         parsed_samples = self.parse_samples()
 
-        parsed_samples.sort(key=lambda x: x["target_length"], reverse=True)
-
-        prompts = []
-        sampling_params_list = []
-
+        bucketed: dict[int, list] = defaultdict(list)
         for sample in parsed_samples:
-            tl = sample["target_length"]
+            bucket = eval_utils.closest_n(sample["target_length"])
+            bucketed[bucket].append(sample)
+
+        all_outputs: list[tuple] = []  # (sample, output)
+        start_time = time.perf_counter()
+
+        for bucket_n in sorted(bucketed.keys(), reverse=True):
+            bucket_samples = bucketed[bucket_n]
+            logger.info(
+                f"Bucket N={bucket_n}: {len(bucket_samples)} sequences "
+                f"(target_length range: "
+                f"{min(s['target_length'] for s in bucket_samples)}"
+                f"–{max(s['target_length'] for s in bucket_samples)})"
+            )
+
+            prompts = [{"prompt_token_ids": s["prompt_ids"]} for s in bucket_samples]
+            # All sequences in this bucket share the same target length (bucket_n)
             sp = SamplingParams(
                 temperature=0.0,
-                max_tokens=tl,
-                min_tokens=tl,
+                max_tokens=bucket_n,
+                min_tokens=bucket_n,
                 allowed_token_ids=valid_allowed_ids,
                 detokenize=False,
             )
-            prompts.append({"prompt_token_ids": sample["prompt_ids"]})
-            sampling_params_list.append(sp)
 
-        logger.info(f"Launching batched inference for {len(prompts)} sequences...")
-        start_time = time.perf_counter()
-
-        # vLLM handles all batching and multiprocessing automatically
-        outputs = llm.generate(prompts, sampling_params=sampling_params_list)
+            outputs = llm.generate(prompts, sampling_params=sp)
+            all_outputs.extend(zip(bucket_samples, outputs))
 
         generation_time = time.perf_counter() - start_time
         logger.info(f"Inference complete in {generation_time:.2f} seconds.")
 
-        return self.process_outputs(parsed_samples, outputs, generation_time)
+        parsed_samples_ordered = [s for s, _ in all_outputs]
+        outputs_ordered = [o for _, o in all_outputs]
+        return self.process_outputs(
+            parsed_samples_ordered, outputs_ordered, generation_time
+        )
 
     def process_outputs(self, parsed_samples, outputs, total_time):
         all_results = []
@@ -140,7 +144,7 @@ class VLLMCipherEvaluator:
 
         # Ensure we zip correctly, matching inputs to vLLM outputs
         for sample, output in zip(parsed_samples, outputs):
-            pred_ids = list(output.outputs[0].token_ids)
+            pred_ids = list(output.outputs[0].token_ids)[: sample["target_length"]]
             pred_plain = eval_utils.decode_prediction(pred_ids, self.config)
             true_plain = sample["true_plain"]
 
