@@ -3,6 +3,7 @@ import json
 import logging
 import time
 import torch
+import sys
 from pathlib import Path
 from collections import defaultdict
 from datasets import load_from_disk
@@ -67,10 +68,20 @@ class VLLMCipherEvaluator:
         return parsed_data
 
     def run(self):
+        # 1. Sanity Check: Ensure the global tokenizer exists before booting vLLM
+        if not EvalConfig.tokenizer_dir.exists():
+            logger.error(f"Global tokenizer not found at {EvalConfig.tokenizer_dir}.")
+            logger.error(
+                "Please run `python -m src.export_tokenizer --model_path <any_valid_model>` once."
+            )
+            sys.exit(1)
+
         logger.info(f"Initializing vLLM across {self.world_size} L4 GPUs...")
 
+        # 2. Point vLLM's `tokenizer` argument to our global directory
         llm = LLM(
             model=self.model_path,
+            tokenizer=str(EvalConfig.tokenizer_dir),
             tensor_parallel_size=self.world_size,
             dtype="bfloat16",
             max_model_len=self.config.max_context,
@@ -98,8 +109,6 @@ class VLLMCipherEvaluator:
 
         parsed_samples = self.parse_samples()
 
-        # parsed_samples.sort(key=lambda x: x["target_length"], reverse=True)
-
         prompts = []
         sampling_params_list = []
 
@@ -118,7 +127,6 @@ class VLLMCipherEvaluator:
         logger.info(f"Launching batched inference for {len(prompts)} sequences...")
         start_time = time.perf_counter()
 
-        # vLLM handles all batching and multiprocessing automatically
         outputs = llm.generate(prompts, sampling_params=sampling_params_list)
 
         generation_time = time.perf_counter() - start_time

@@ -3,8 +3,8 @@ import json
 from pathlib import Path
 
 
-OUTPUT_DIR = Path(__file__).parent.parent.parent / "outputs"
 DATA_DIR = Path(__file__).parent.parent.parent.parent / "Ciphers"
+TOKENIZER_DIR = Path(__file__).parent.parent.parent / "tokenizer"
 
 
 @dataclass
@@ -17,6 +17,8 @@ class EvalConfig:
     eos_token_id: int
     max_context: int
     use_spaces: bool
+
+    tokenizer_dir: Path = TOKENIZER_DIR
 
     @property
     def sep_token_id(self) -> int:

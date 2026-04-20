@@ -3,12 +3,10 @@ import logging
 import json
 from pathlib import Path
 from easy_logging import EasyFormatter
-
-# Hugging Face dependencies (automatically available via vLLM/transformers)
 from tokenizers import Tokenizer, models
 from transformers import PreTrainedTokenizerFast
 
-from src.classes.config import EvalConfig
+from src.classes.config import EvalConfig, TOKENIZER_DIR
 
 handler = logging.StreamHandler()
 handler.setFormatter(EasyFormatter())
@@ -23,7 +21,7 @@ def create_hf_tokenizer(model_path: str):
     This satisfies vLLM's initialization requirements without interfering with our
     raw token ID generation logic.
     """
-    logger.info(f"Loading configuration for tokenizer export...")
+    logger.info(f"Loading configuration from {model_path} to build global tokenizer...")
     save_dir = Path(model_path)
 
     # Read the actual vocab_size the model was trained with
@@ -35,8 +33,19 @@ def create_hf_tokenizer(model_path: str):
     config = EvalConfig.from_model_path(model_path=model_path, use_spaces=True)
 
     vocab = {}
-    for i in range(actual_vocab_size):  # Use 2560, not 2535
-        vocab[f"[unused_{i}]"] = i
+    for i in range(actual_vocab_size):
+        if i == config.bos_token_id:
+            vocab["[BOS]"] = i
+        elif i == config.eos_token_id:
+            vocab["[EOS]"] = i
+        elif i == config.pad_token_id:
+            vocab["[PAD]"] = i
+        elif i == config.sep_token_id:
+            vocab["[SEP]"] = i
+        elif config.use_spaces and i == config.space_token_id:
+            vocab["_"] = i
+        else:
+            vocab[f"[unused_{i}]"] = i
 
     # 2. Initialize the base Tokenizer using the WordLevel model
     # WordLevel is perfectly suited for 1:1 symbol-to-integer cipher models
@@ -53,14 +62,11 @@ def create_hf_tokenizer(model_path: str):
         unk_token="[UNK]",
     )
 
-    # 4. Export to the checkpoint directory
-    save_dir = Path(model_path)
-    if not save_dir.exists():
-        logger.error(f"Model path does not exist: {save_dir}")
-        return
+    # 4. Export to the CENTRAL tokenizer directory instead of the specific model directory
+    TOKENIZER_DIR.mkdir(parents=True, exist_ok=True)
+    fast_tokenizer.save_pretrained(TOKENIZER_DIR)
 
-    fast_tokenizer.save_pretrained(save_dir)
-    logger.info(f"Successfully generated and saved SOTA Tokenizer to {save_dir}")
+    logger.info(f"Successfully generated and saved Global Tokenizer to {TOKENIZER_DIR}")
     logger.info(
         f"Files created: tokenizer.json, tokenizer_config.json, special_tokens_map.json"
     )
@@ -72,7 +78,7 @@ if __name__ == "__main__":
         "--model_path",
         type=str,
         required=True,
-        help="Path to the trained model checkpoint (e.g., outputs/checkpoint-16750)",
+        help="Path to a reference trained model checkpoint (e.g., outputs/checkpoint-16750)",
     )
     args = parser.parse_args()
 
