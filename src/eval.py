@@ -32,7 +32,7 @@ class VLLMCipherEvaluator:
         self.config.use_spaces = use_spaces
 
         self.output_log_path = Path(self.model_path) / "evaluation_results.jsonl"
-        self.dataset = load_from_disk(self.config.tokenized_dir / "Validation")
+        self.dataset = load_from_disk(self.config.tokenized_dir / "Test")
         self.allowed_token_ids = eval_utils.build_allowed_token_ids(self.config)
 
         # Detect available L4 GPUs for Tensor Parallelism
