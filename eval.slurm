@@ -6,9 +6,22 @@
 #SBATCH --partition=l4
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=64G
-#SBATCH --gres=gpu:l4:4
 
 set -e
+
+# -------------------------------------------------------------------
+# 0. Mandatory GPU Check
+# -------------------------------------------------------------------
+NUM_GPUS=$(nvidia-smi --list-gpus | wc -l || echo 0)
+
+if [ "$NUM_GPUS" -eq 0 ]; then
+    echo "====================================================================="
+    echo " ERROR: No GPUs allocated!"
+    echo " You must specify the number of GPUs when submitting the job."
+    echo " Example: sbatch --gres=gpu:l4:3 eval.slurm --model_path <path>"
+    echo "====================================================================="
+    exit 1
+fi
 
 PROJECT_DIR=/ceph/project/SW10-CausalLM/evaluate-models
 cd $PROJECT_DIR

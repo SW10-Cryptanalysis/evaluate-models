@@ -16,12 +16,14 @@ Evaluations are triggered via SLURM. The SLURM script automatically synchronizes
 
 **Standard Execution:**
 ```bash
-sbatch eval.slurm --model_path /path/to/model
+sbatch --gres=gpu:l4:4 eval.slurm --model_path /path/to/model
 ```
 
 **Examples:**
 ```bash
-sbatch eval.slurm --model_path outputs/checkpoint-16750
+sbatch --gres=gpu:l4:4 eval.slurm --model_path outputs/checkpoint-16750
 
-sbatch eval.slurm --model_path outputs/checkpoint-16750 --spaces
+sbatch --gres=gpu:l4:4 eval.slurm --model_path outputs/checkpoint-16750 --spaces
+
+sbatch --gres=gpu:l4:3 eval.slurm --model_path outputs/llama_no_spaces_ucloud --spaces
 ```
