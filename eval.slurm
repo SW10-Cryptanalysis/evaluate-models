@@ -66,7 +66,18 @@ export VLLM_CACHE_ROOT="$CACHE_DIR/vllm"
 export XDG_CACHE_HOME="$CACHE_DIR"
 
 # -------------------------------------------------------------------
-# 3. Environment & Execution
+# 3. Parse Arguments for Visualization
+# -------------------------------------------------------------------
+MODEL_PATH=""
+args=("$@")
+for ((i=0; i<${#args[@]}; i++)); do
+    if [[ "${args[$i]}" == "--model_path" ]]; then
+        MODEL_PATH="${args[$i+1]}"
+    fi
+done
+
+# -------------------------------------------------------------------
+# 4. Environment & Execution
 # -------------------------------------------------------------------
 echo "Syncing environment..." | tee -a $LOG_FILE
 uv sync
@@ -76,5 +87,16 @@ uv pip install https://github.com/Dao-AILab/flash-attention/releases/download/v2
 
 echo "Launching vLLM evaluation engine..." | tee -a $LOG_FILE
 uv run python -m src.eval "$@" 2>&1 | tee -a $LOG_FILE
+
+# -------------------------------------------------------------------
+# 5. Visualization
+# -------------------------------------------------------------------
+if [ -n "$MODEL_PATH" ]; then
+    EVAL_FILE_PATH="$MODEL_PATH/evaluation_results.jsonl"
+    echo "Generating evaluation graphs..." | tee -a $LOG_FILE
+    uv run python -m src.visualize_eval --eval_file_path "$EVAL_FILE_PATH" 2>&1 | tee -a $LOG_FILE
+else
+    echo "WARNING: Could not parse --model_path. Skipping visualization." | tee -a $LOG_FILE
+fi
 
 echo "Evaluation Job finished at $(date)" | tee -a $LOG_FILE
