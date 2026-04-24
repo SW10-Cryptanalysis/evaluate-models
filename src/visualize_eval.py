@@ -3,9 +3,20 @@ import json
 from pathlib import Path
 import matplotlib.pyplot as plt
 
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Visualize evaluation results from jsonl.")
-    parser.add_argument("--eval_file_path", type=str, required=True, help="Path to the evaluation_results.jsonl file")
+    parser = argparse.ArgumentParser(
+        description="Visualize evaluation results from jsonl."
+    )
+    parser.add_argument(
+        "--eval_file_path",
+        type=str,
+        required=True,
+        help="Path to the evaluation_results.jsonl file",
+    )
+    parser.add_argument(
+        "--title", type=str, required=True, help="Custom title for the generated graphs"
+    )
     args = parser.parse_args()
 
     eval_file = Path(args.eval_file_path)
@@ -23,7 +34,7 @@ def main() -> None:
             line = line.strip()
             if not line:
                 continue
-            
+
             data = json.loads(line)
 
             # Skip the summary lines appended at the end of eval.py
@@ -46,6 +57,9 @@ def main() -> None:
     # Initialize plotting
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
 
+    # Set the overarching title from the command line argument
+    fig.suptitle(args.title, fontsize=16, fontweight="bold", y=1.05)
+
     # Graph 1: SER vs Length
     ax1.scatter(lengths, sers, alpha=0.5, color="#1f77b4", edgecolors="none")
     ax1.set_title("Symbol Error Rate (SER) vs Sequence Length")
@@ -66,6 +80,7 @@ def main() -> None:
     output_image_path = eval_file.with_name("evaluation_graphs.png")
     plt.savefig(output_image_path, dpi=300, bbox_inches="tight")
     print(f"Graphs successfully generated and saved to:\n{output_image_path}")
+
 
 if __name__ == "__main__":
     main()

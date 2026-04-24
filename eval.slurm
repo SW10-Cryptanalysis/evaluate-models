@@ -18,7 +18,7 @@ if [ "$NUM_GPUS" -eq 0 ]; then
     echo "====================================================================="
     echo " ERROR: No GPUs allocated!"
     echo " You must specify the number of GPUs when submitting the job."
-    echo " Example: sbatch --gres=gpu:l4:3 eval.slurm --model_path <path>"
+    echo " Example: sbatch --gres=gpu:l4:3 eval.slurm --model_path <path> --title \"My Title\""
     echo "====================================================================="
     exit 1
 fi
@@ -66,15 +66,30 @@ export VLLM_CACHE_ROOT="$CACHE_DIR/vllm"
 export XDG_CACHE_HOME="$CACHE_DIR"
 
 # -------------------------------------------------------------------
-# 3. Parse Arguments for Visualization
+# 3. Parse Arguments
 # -------------------------------------------------------------------
 MODEL_PATH=""
+TITLE=""
+EVAL_ARGS=()
+
 args=("$@")
 for ((i=0; i<${#args[@]}; i++)); do
     if [[ "${args[$i]}" == "--model_path" ]]; then
         MODEL_PATH="${args[$i+1]}"
+        EVAL_ARGS+=("${args[$i]}")
+    elif [[ "${args[$i]}" == "--title" ]]; then
+        TITLE="${args[$i+1]}"
+        ((i++)) # Skip the title value so it isn't passed to eval.py
+        continue
+    else
+        EVAL_ARGS+=("${args[$i]}")
     fi
 done
+
+if [ -z "$TITLE" ]; then
+    echo "ERROR: --title argument is missing. Please provide a title." | tee -a $LOG_FILE
+    exit 1
+fi
 
 # -------------------------------------------------------------------
 # 4. Environment & Execution
@@ -86,7 +101,8 @@ echo "Installing pre-compiled FlashAttention-2..." | tee -a $LOG_FILE
 uv pip install https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.9cxx11abiTRUE-cp312-cp312-linux_x86_64.whl
 
 echo "Launching vLLM evaluation engine..." | tee -a $LOG_FILE
-uv run python -m src.eval "$@" 2>&1 | tee -a $LOG_FILE
+# Only passing args meant for eval.py (excludes --title)
+uv run python -m src.eval "${EVAL_ARGS[@]}" 2>&1 | tee -a $LOG_FILE
 
 # -------------------------------------------------------------------
 # 5. Visualization
@@ -94,7 +110,7 @@ uv run python -m src.eval "$@" 2>&1 | tee -a $LOG_FILE
 if [ -n "$MODEL_PATH" ]; then
     EVAL_FILE_PATH="$MODEL_PATH/evaluation_results.jsonl"
     echo "Generating evaluation graphs..." | tee -a $LOG_FILE
-    uv run python -m src.visualize_eval --eval_file_path "$EVAL_FILE_PATH" 2>&1 | tee -a $LOG_FILE
+    uv run python -m src.visualize_eval --eval_file_path "$EVAL_FILE_PATH" --title "$TITLE" 2>&1 | tee -a $LOG_FILE
 else
     echo "WARNING: Could not parse --model_path. Skipping visualization." | tee -a $LOG_FILE
 fi
