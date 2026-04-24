@@ -5,7 +5,6 @@ import time
 import torch
 import sys
 from pathlib import Path
-from collections import defaultdict
 from datasets import load_from_disk
 from vllm import LLM, SamplingParams
 from easy_logging import EasyFormatter
@@ -21,12 +20,11 @@ logger.setLevel(logging.INFO)
 
 
 class VLLMCipherEvaluator:
-    """
-    Orchestrates the evaluation of a Causal LM using vLLM for high-throughput
+    """Orchestrates the evaluation of a Causal LM using vLLM for high-throughput
     decoding of long homophonic substitutions on Ada Lovelace architecture.
     """
 
-    def __init__(self, model_path: str, use_spaces: bool):
+    def __init__(self, model_path: str, use_spaces: bool) -> None:
         self.model_path = model_path
         self.config = EvalConfig.from_model_path(model_path, use_spaces)
         self.config.use_spaces = use_spaces
@@ -63,7 +61,7 @@ class VLLMCipherEvaluator:
                         "true_plain": item["raw_plaintext"],
                         "redundancy": int(item["redundancy"]),
                         "target_length": target_length,
-                    }
+                    },
                 )
         return parsed_data
 
@@ -72,7 +70,7 @@ class VLLMCipherEvaluator:
         if not EvalConfig.tokenizer_dir.exists():
             logger.error(f"Global tokenizer not found at {EvalConfig.tokenizer_dir}.")
             logger.error(
-                "Please run `python -m src.export_tokenizer --model_path <any_valid_model>` once."
+                "Please run `python -m src.export_tokenizer --model_path <any_valid_model>` once.",
             )
             sys.exit(1)
 
@@ -142,7 +140,7 @@ class VLLMCipherEvaluator:
         group_stats = {}
 
         # Ensure we zip correctly, matching inputs to vLLM outputs
-        for sample, output in zip(parsed_samples, outputs):
+        for sample, output in zip(parsed_samples, outputs, strict=False):
             pred_ids = list(output.outputs[0].token_ids)[: sample["target_length"]]
             pred_plain = eval_utils.decode_prediction(pred_ids, self.config)
             true_plain = sample["true_plain"]
@@ -153,7 +151,7 @@ class VLLMCipherEvaluator:
                 "index": sample["index"],
                 "redundancy": sample["redundancy"],
                 "ciphertext": eval_utils.decode_ciphertext(
-                    sample["raw_cipher_ids"], self.config
+                    sample["raw_cipher_ids"], self.config,
                 ),
                 "plaintext": true_plain,
                 "predicted_plaintext": pred_plain,
@@ -186,16 +184,16 @@ class VLLMCipherEvaluator:
                         "processed_count": processed_count,
                         "avg_ser": round(global_avg_ser, 6),
                         "total_inference_time": round(total_time, 2),
-                    }
+                    },
                 )
-                + "\n"
+                + "\n",
             )
 
             for (n, redundancy), stats in sorted(group_stats.items()):
                 count = stats["count"]
                 avg = stats["total_ser"] / count
                 logger.info(
-                    f"  N={n:>5}  μ={redundancy:>3}  count={count:>3}  avg_ser={avg:.4f}"
+                    f"  N={n:>5}  μ={redundancy:>3}  count={count:>3}  avg_ser={avg:.4f}",
                 )
                 f.write(
                     json.dumps(
@@ -205,9 +203,9 @@ class VLLMCipherEvaluator:
                             "redundancy": redundancy,
                             "count": count,
                             "avg_ser": round(avg, 6),
-                        }
+                        },
                     )
-                    + "\n"
+                    + "\n",
                 )
 
         logger.info(f"Results written to {self.output_log_path}")

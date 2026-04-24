@@ -27,17 +27,22 @@ sbatch --gres=gpu:l4:<NUM_GPUS> eval.slurm --model_path /path/to/model
 ```
 
 **Examples**
-# 4 GPUs (e.g., for a model with 8 attention heads and 2560 vocab size)
+## 4 GPUs (e.g., for a model with 8 attention heads and 2560 vocab size)
 ```bash
 sbatch --gres=gpu:l4:4 eval.slurm --model_path outputs/checkpoint-16750
 ```
 
-# 4 GPUs with space character inclusion
+## 4 GPUs with space character inclusion
 ```bash
 sbatch --gres=gpu:l4:4 eval.slurm --model_path outputs/checkpoint-16750 --spaces
 ```
 
-# 2 GPUs (e.g., for a model with 6 attention heads and 2560 vocab size)
+## 2 GPUs (e.g., for a model with 6 attention heads and 2560 vocab size)
 ```bash
 sbatch --gres=gpu:l4:2 eval.slurm --model_path outputs/llama_no_spaces_ucloud
+```
+
+**Visualization**
+```bash
+uv run python -m src.visualize_eval --eval_file_path /path/to/evaluation_results.jsonl
 ```

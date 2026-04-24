@@ -7,6 +7,7 @@ requires-python = ">=3.12, <3.13"
 dependencies = [
     "datasets>=4.8.4",
     "easy-logging-formatter>=0.1.1",
+    "matplotlib>=3.10.9",
     "tokenizers>=0.22.2",
     "torch==2.9.0",
     "transformers>=4.57.6",
@@ -83,6 +84,7 @@ ignore = [
   "D213",   # multi-line-summary-second-line
   "UP035",  # Import from `collections.abc`instead: ...
   "ANN401", # Dynamically typed expressions (typing.Any) are disallowed 
+  "E501",   # Line too long
 ]
 
 [tool.ruff.lint.per-file-ignores]

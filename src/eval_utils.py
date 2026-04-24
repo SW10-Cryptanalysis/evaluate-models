@@ -12,8 +12,7 @@ def closest_n(length: int) -> int:
 
 
 def build_allowed_token_ids(config: EvalConfig) -> list[int]:
-    """
-    Build the list of token IDs corresponding to latin alphabet characters a-z.
+    """Build the list of token IDs corresponding to latin alphabet characters a-z.
     This collapses the symbol space for dynamic key-recovery.
     """
     ids = [
@@ -67,13 +66,13 @@ def run_preflight_checks(
 
     if output_log_path.exists():
         warnings.append(
-            f"Output file {output_log_path} exists and will be OVERWRITTEN."
+            f"Output file {output_log_path} exists and will be OVERWRITTEN.",
         )
 
     out_of_vocab = [tid for tid in allowed_token_ids if tid >= vocab_size]
     if out_of_vocab:
         errors.append(
-            f"Allowed token IDs exceed vocab size ({vocab_size}): {out_of_vocab}."
+            f"Allowed token IDs exceed vocab size ({vocab_size}): {out_of_vocab}.",
         )
 
     dataset_errors = 0
@@ -84,7 +83,7 @@ def run_preflight_checks(
             dataset_errors += 1
             if dataset_errors == 1:
                 errors.append(
-                    f"Sample 0: expected bos_token_id={config.bos_token_id}, got {sample[0]}."
+                    f"Sample 0: expected bos_token_id={config.bos_token_id}, got {sample[0]}.",
                 )
         if sample[-1] != config.eos_token_id:
             dataset_errors += 1
@@ -93,7 +92,7 @@ def run_preflight_checks(
 
     if dataset_errors > 0:
         errors.append(
-            f"Found {dataset_errors} dataset format errors. Token layout corrupt."
+            f"Found {dataset_errors} dataset format errors. Token layout corrupt.",
         )
 
     for w in warnings:

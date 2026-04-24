@@ -15,9 +15,8 @@ logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
 
-def create_hf_tokenizer(model_path: str):
-    """
-    Generates a Hugging Face compatible tokenizer for custom integer-based cipher models.
+def create_hf_tokenizer(model_path: str) -> None:
+    """Generates a Hugging Face compatible tokenizer for custom integer-based cipher models.
     This satisfies vLLM's initialization requirements without interfering with our
     raw token ID generation logic.
     """
@@ -68,7 +67,7 @@ def create_hf_tokenizer(model_path: str):
 
     logger.info(f"Successfully generated and saved Global Tokenizer to {TOKENIZER_DIR}")
     logger.info(
-        f"Files created: tokenizer.json, tokenizer_config.json, special_tokens_map.json"
+        "Files created: tokenizer.json, tokenizer_config.json, special_tokens_map.json",
     )
 
 
