@@ -83,9 +83,9 @@ class VLLMCipherEvaluator:
             tensor_parallel_size=self.world_size,
             dtype="bfloat16",
             max_model_len=self.config.max_context,
-            enforce_eager=False,  # Use CUDA graphs
-            gpu_memory_utilization=0.95,  # Maximize memory for PagedAttention
-            enable_prefix_caching=False,  # Disable prefix caching to save memory, as we have unique prompts
+            enforce_eager=False,
+            gpu_memory_utilization=0.95,
+            enable_prefix_caching=False,
         )
 
         vocab_size = (
@@ -145,7 +145,6 @@ class VLLMCipherEvaluator:
         total_ser = 0.0
         group_stats = {}
 
-        # Ensure we zip correctly, matching inputs to vLLM outputs
         for sample, output in zip(parsed_samples, outputs, strict=False):
             pred_ids = list(output.outputs[0].token_ids)[: sample["target_length"]]
             pred_plain = eval_utils.decode_prediction(pred_ids, self.config)
@@ -167,7 +166,6 @@ class VLLMCipherEvaluator:
             all_results.append(result_dict)
             total_ser += ser
 
-            # Bucketing logic for statistical separation
             cipher_length = len(sample["raw_cipher_ids"])
             bucket = eval_utils.closest_n(cipher_length)
             key = (bucket, sample["redundancy"])

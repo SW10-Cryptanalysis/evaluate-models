@@ -24,11 +24,10 @@ def create_hf_tokenizer(model_path: str) -> None:
     logger.info(f"Loading configuration from {model_path} to build global tokenizer...")
     save_dir = Path(model_path)
 
-    # Read the actual vocab_size the model was trained with
     model_config_path = save_dir / "config.json"
     with open(model_config_path) as f:
         model_config = json.load(f)
-    actual_vocab_size = model_config["vocab_size"]  # Will be 2560
+    actual_vocab_size = model_config["vocab_size"]
 
     config = EvalConfig.from_model_path(model_path=model_path, use_spaces=True)
 
@@ -48,7 +47,6 @@ def create_hf_tokenizer(model_path: str) -> None:
             vocab[f"[unused_{i}]"] = i
 
     # 2. Initialize the base Tokenizer using the WordLevel model
-    # WordLevel is perfectly suited for 1:1 symbol-to-integer cipher models
     tokenizer_model = models.WordLevel(vocab=vocab, unk_token="[UNK]")  # noqa: S106
     base_tokenizer = Tokenizer(tokenizer_model)
 

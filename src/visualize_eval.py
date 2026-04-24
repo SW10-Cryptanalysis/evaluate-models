@@ -40,7 +40,6 @@ def main() -> None:
     redundancies = []
     sers = []
 
-    # Parse the jsonl file
     with open(eval_file, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -49,11 +48,9 @@ def main() -> None:
 
             data = json.loads(line)
 
-            # Skip the summary lines appended at the end of eval.py
             if "type" in data and data["type"].startswith("summary"):
                 continue
 
-            # Length can be safely derived from the plaintext
             length = len(data["plaintext"])
             redundancy = data["redundancy"]
             ser = data["ser"]
@@ -66,10 +63,8 @@ def main() -> None:
         logger.info("No valid sample data found in the evaluation file.")
         return
 
-    # Initialize plotting
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
 
-    # Set the overarching title from the command line argument
     fig.suptitle(args.title, fontsize=16, fontweight="bold", y=1.05)
 
     # Graph 1: SER vs Length
@@ -88,7 +83,6 @@ def main() -> None:
 
     plt.tight_layout()
 
-    # Save the output to the same directory as the evaluation file
     output_image_path = eval_file.with_name("evaluation_graphs.png")
     plt.savefig(output_image_path, dpi=300, bbox_inches="tight")
     logger.info(f"Graphs successfully generated and saved to:\n{output_image_path}")
