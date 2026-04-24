@@ -3,8 +3,6 @@ import sys
 import pytest
 from unittest.mock import patch
 
-# Note: Adjust the import based on where visualize_eval.py is located.
-# Assuming it is in the src directory here:
 from src.visualize_eval import main
 
 
@@ -49,7 +47,6 @@ class TestVisualizeEval:
         with patch.object(sys, "argv", test_args):
             main()
 
-        # Verify that matplotlib's savefig was called
         mock_savefig.assert_called_once()
 
     @patch("matplotlib.pyplot.savefig")
@@ -67,7 +64,6 @@ class TestVisualizeEval:
         with patch.object(sys, "argv", test_args):
             main()
 
-        # Verify plotting is skipped
         mock_savefig.assert_not_called()
 
     @patch("matplotlib.pyplot.savefig")
@@ -84,5 +80,4 @@ class TestVisualizeEval:
         with patch.object(sys, "argv", test_args):
             main()
 
-        # Verify plotting is skipped
         mock_savefig.assert_not_called()

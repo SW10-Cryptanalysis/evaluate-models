@@ -21,12 +21,12 @@ class TestEvalUtils:
     def test_closest_n(self):
         assert eval_utils.closest_n(350) == 350
         assert eval_utils.closest_n(349) == 350
-        assert eval_utils.closest_n(100000) == 10000  # Caps out at highest bucket
-        assert eval_utils.closest_n(0) == 350  # Caps at lowest bucket
+        assert eval_utils.closest_n(100000) == 10000
+        assert eval_utils.closest_n(0) == 350
 
     def test_build_allowed_token_ids_with_spaces(self, mock_config):
         ids = eval_utils.build_allowed_token_ids(mock_config)
-        assert len(ids) == 27  # 26 letters + 1 space
+        assert len(ids) == 27
         assert mock_config.space_token_id in ids
 
     def test_build_allowed_token_ids_without_spaces(self, mock_config):
@@ -36,19 +36,16 @@ class TestEvalUtils:
         assert mock_config.space_token_id not in ids
 
     def test_decode_prediction(self, mock_config):
-        # char_offset = eos (6) + 1 = 7. 'a' is 7, 'b' is 8.
-        # space_token_id = bos (5) - 1 = 4.
         ids = [7, 8, 4, 9]
         decoded = eval_utils.decode_prediction(ids, mock_config)
         assert decoded == "ab_c"
 
     def test_decode_prediction_out_of_bounds(self, mock_config):
-        ids = [1]  # Below char offset and not space
+        ids = [1]
         decoded = eval_utils.decode_prediction(ids, mock_config)
         assert decoded == "?"
 
     def test_decode_ciphertext(self, mock_config):
-        # bos_token_id = 5, sep_token_id = 3
         ids = [5, 100, 200, 3, 300]
         decoded = eval_utils.decode_ciphertext(ids, mock_config)
         assert decoded == "100 200 300"
@@ -98,7 +95,6 @@ class TestEvalUtils:
 
     def test_run_preflight_checks_raises_runtime_error(self, mock_config):
         logger = logging.getLogger("test_logger")
-        # Pass empty lists to force a dataset format error (no BOS/EOS/SEP)
         dataset = [{"input_ids": [1, 2, 3]}]
 
         with pytest.raises(RuntimeError, match="Preflight checks failed"):

@@ -63,7 +63,6 @@ class TestConfigTypes:
 
 class TestConfigFromModelPath:
     def test_from_model_path_loads_correctly(self, tmp_path):
-        # Setup valid config.json
         model_path = tmp_path / "model"
         model_path.mkdir()
         config_file = model_path / "config.json"
@@ -82,7 +81,6 @@ class TestConfigFromModelPath:
         assert isinstance(config.vocab_size, int)
 
     def test_from_model_path_missing_file_raises_error(self, tmp_path):
-        # Empty directory with no config.json
         model_path = tmp_path / "empty_model"
         model_path.mkdir()
 
@@ -90,7 +88,6 @@ class TestConfigFromModelPath:
             EvalConfig.from_model_path(model_path, use_spaces=True)
 
     def test_from_model_path_invalid_json_fails(self, tmp_path):
-        # Corrupt JSON
         model_path = tmp_path / "corrupt_model"
         model_path.mkdir()
         config_file = model_path / "config.json"
@@ -100,7 +97,6 @@ class TestConfigFromModelPath:
             EvalConfig.from_model_path(model_path, use_spaces=True)
 
     def test_from_model_path_missing_key_fails(self, tmp_path):
-        # JSON missing required keys
         model_path = tmp_path / "bad_keys_model"
         model_path.mkdir()
         config_file = model_path / "config.json"

@@ -12,10 +12,8 @@ def pytest_configure(config: pytest.Config) -> None:
     even run. This mock prevents that by pre-caching a dummy module.
     """
     if "vllm" not in sys.modules:
-        # Create a blank dummy module natively
         dummy_vllm = types.ModuleType("vllm")
 
-        # Create basic empty classes that can accept any initialization arguments
         class DummyLLM:
             def __init__(self, *args, **kwargs):
                 pass
@@ -28,10 +26,8 @@ def pytest_configure(config: pytest.Config) -> None:
             def __init__(self, *args, **kwargs):
                 pass
 
-        # Attach them to our dummy module
         dummy_vllm.LLM = DummyLLM  # type: ignore
         dummy_vllm.SamplingParams = DummySamplingParams  # type: ignore
         dummy_vllm.RequestOutput = DummyRequestOutput  # type: ignore
 
-        # Inject the dummy module into the system
         sys.modules["vllm"] = dummy_vllm
