@@ -6,7 +6,7 @@ import torch
 import sys
 from pathlib import Path
 from datasets import load_from_disk
-from vllm import LLM, SamplingParams
+from vllm import LLM, SamplingParams, RequestOutput  # type: ignore
 from easy_logging import EasyFormatter
 
 from src.classes.config import EvalConfig
@@ -20,11 +20,10 @@ logger.setLevel(logging.INFO)
 
 
 class VLLMCipherEvaluator:
-    """Orchestrates the evaluation of a Causal LM using vLLM for high-throughput
-    decoding of long homophonic substitutions on Ada Lovelace architecture.
-    """
+    """Evaluator class that uses vLLM to assess cipher decryption performance across a test dataset."""
 
     def __init__(self, model_path: str, use_spaces: bool) -> None:
+        """Initialize the evaluator with model path and configuration."""
         self.model_path = model_path
         self.config = EvalConfig.from_model_path(model_path, use_spaces)
         self.config.use_spaces = use_spaces
@@ -38,7 +37,7 @@ class VLLMCipherEvaluator:
         if self.world_size == 0:
             raise RuntimeError("vLLM requires CUDA devices, but none were found.")
 
-    def parse_samples(self):
+    def parse_samples(self) -> list[dict]:
         """Extract prompt token IDs (up to SEP) and target lengths."""
         parsed_data = []
         for index, item in enumerate(self.dataset):
@@ -65,7 +64,8 @@ class VLLMCipherEvaluator:
                 )
         return parsed_data
 
-    def run(self):
+    def run(self) -> list[dict]:
+        """Main method to execute the evaluation process: initializes vLLM, runs inference, and processes outputs."""
         # 1. Sanity Check: Ensure the global tokenizer exists before booting vLLM
         if not EvalConfig.tokenizer_dir.exists():
             logger.error(f"Global tokenizer not found at {EvalConfig.tokenizer_dir}.")
@@ -134,7 +134,13 @@ class VLLMCipherEvaluator:
 
         return self.process_outputs(parsed_samples, outputs, generation_time)
 
-    def process_outputs(self, parsed_samples, outputs, total_time):
+    def process_outputs(
+        self,
+        parsed_samples: list[dict],
+        outputs: list[RequestOutput],
+        total_time: float,
+    ) -> list[dict]:
+        """Decode predictions, calculate SER, and aggregate results with statistical bucketing."""
         all_results = []
         total_ser = 0.0
         group_stats = {}
@@ -151,7 +157,8 @@ class VLLMCipherEvaluator:
                 "index": sample["index"],
                 "redundancy": sample["redundancy"],
                 "ciphertext": eval_utils.decode_ciphertext(
-                    sample["raw_cipher_ids"], self.config,
+                    sample["raw_cipher_ids"],
+                    self.config,
                 ),
                 "plaintext": true_plain,
                 "predicted_plaintext": pred_plain,
@@ -213,6 +220,7 @@ class VLLMCipherEvaluator:
 
 
 def main() -> None:
+    """Entry point for the evaluation script. Parses command-line arguments and initiates the evaluation process."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--spaces", action="store_true")
     parser.add_argument("--model_path", type=str, required=True)

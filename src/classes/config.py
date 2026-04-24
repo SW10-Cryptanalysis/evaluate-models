@@ -22,24 +22,28 @@ class EvalConfig:
 
     @property
     def sep_token_id(self) -> int:
+        """Seperator token."""
         return self.bos_token_id - 2
 
     @property
     def space_token_id(self) -> int:
+        """Space token."""
         return self.bos_token_id - 1
 
     @property
     def char_offset(self) -> int:
+        """Offset for character token IDs."""
         return self.eos_token_id + 1
 
     @property
     def tokenized_dir(self) -> Path:
         """Dynamic path based on whether we use spaces or not."""
         suffix = "spaced" if self.use_spaces else "normal"
-        return DATA_DIR / f"tokenized_{suffix}"
+        return DATA_DIR / f"tokenized_{suffix}"  # type: ignore
 
     @classmethod
     def from_model_path(cls, model_path: str | Path, use_spaces: bool) -> "EvalConfig":
+        """Load configuration directly from the training datas metadata file."""
         config_path = Path(model_path) / "config.json"
         with open(config_path) as f:
             mc = json.load(f)

@@ -17,6 +17,7 @@ logger.setLevel(logging.INFO)
 
 def create_hf_tokenizer(model_path: str) -> None:
     """Generates a Hugging Face compatible tokenizer for custom integer-based cipher models.
+
     This satisfies vLLM's initialization requirements without interfering with our
     raw token ID generation logic.
     """
@@ -48,17 +49,17 @@ def create_hf_tokenizer(model_path: str) -> None:
 
     # 2. Initialize the base Tokenizer using the WordLevel model
     # WordLevel is perfectly suited for 1:1 symbol-to-integer cipher models
-    tokenizer_model = models.WordLevel(vocab=vocab, unk_token="[UNK]")
+    tokenizer_model = models.WordLevel(vocab=vocab, unk_token="[UNK]")  # noqa: S106
     base_tokenizer = Tokenizer(tokenizer_model)
 
     # 3. Wrap into a Transformers fast tokenizer
     fast_tokenizer = PreTrainedTokenizerFast(
         tokenizer_object=base_tokenizer,
-        bos_token="[BOS]",
-        eos_token="[EOS]",
-        sep_token="[SEP]",
-        pad_token="[PAD]",
-        unk_token="[UNK]",
+        bos_token="[BOS]",  # noqa: S106
+        eos_token="[EOS]",  # noqa: S106
+        sep_token="[SEP]",  # noqa: S106
+        pad_token="[PAD]",  # noqa: S106
+        unk_token="[UNK]",  # noqa: S106
     )
 
     # 4. Export to the CENTRAL tokenizer directory instead of the specific model directory

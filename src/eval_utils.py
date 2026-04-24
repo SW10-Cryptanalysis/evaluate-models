@@ -13,6 +13,7 @@ def closest_n(length: int) -> int:
 
 def build_allowed_token_ids(config: EvalConfig) -> list[int]:
     """Build the list of token IDs corresponding to latin alphabet characters a-z.
+
     This collapses the symbol space for dynamic key-recovery.
     """
     ids = [
@@ -34,7 +35,7 @@ def decode_prediction(ids: list[int], config: EvalConfig) -> str:
             chars.append(chr(idx - config.char_offset + ord("a")))
         else:
             chars.append("?")
-    return "".join(chars)
+    return "".join(chars)  # type: ignore
 
 
 def decode_ciphertext(ids: list[int], config: EvalConfig) -> str:
@@ -51,32 +52,31 @@ def calculate_ser(true_plain: str, pred_plain: str) -> float:
     return mismatches / len(true_plain)
 
 
-def run_preflight_checks(
-    config: EvalConfig,
-    dataset,
-    allowed_token_ids: list[int],
-    output_log_path: Path,
-    vocab_size: int,
-    logger: logging.Logger,
-) -> None:
-    """Sanity checks to guarantee the Mandatory Training Objective format is intact."""
-    logger.info("Running preflight checks...")
-    errors: list[str] = []
-    warnings: list[str] = []
-
+def _check_output_file(output_log_path: Path) -> list[str]:
+    """Check if the output log file exists and return a warning if it will be overwritten."""
     if output_log_path.exists():
-        warnings.append(
-            f"Output file {output_log_path} exists and will be OVERWRITTEN.",
-        )
+        return [f"Output file {output_log_path} exists and will be OVERWRITTEN."]
+    return []
 
+
+def _check_vocab_bounds(allowed_token_ids: list[int], vocab_size: int) -> list[str]:
+    """Ensure allowed token IDs do not exceed the model's vocabulary size."""
     out_of_vocab = [tid for tid in allowed_token_ids if tid >= vocab_size]
     if out_of_vocab:
-        errors.append(
-            f"Allowed token IDs exceed vocab size ({vocab_size}): {out_of_vocab}.",
-        )
+        return [f"Allowed token IDs exceed vocab size ({vocab_size}): {out_of_vocab}."]
+    return []
 
+
+def _check_dataset_format(
+    dataset: list[dict],
+    config: EvalConfig,
+    num_samples: int = 10,
+) -> list[str]:
+    """Verify the mandatory dataset format (BOS, SEP, EOS tokens) on a subset of data."""
+    errors = []
     dataset_errors = 0
-    n_probe = min(10, len(dataset))
+    n_probe = min(num_samples, len(dataset))
+
     for i in range(n_probe):
         sample = dataset[i]["input_ids"]
         if sample[0] != config.bos_token_id:
@@ -95,8 +95,29 @@ def run_preflight_checks(
             f"Found {dataset_errors} dataset format errors. Token layout corrupt.",
         )
 
+    return errors
+
+
+def run_preflight_checks(
+    config: EvalConfig,
+    dataset: list[dict],
+    allowed_token_ids: list[int],
+    output_log_path: Path,
+    vocab_size: int,
+    logger: logging.Logger,
+) -> None:
+    """Sanity checks to guarantee the Mandatory Training Objective format is intact."""
+    logger.info("Running preflight checks...")
+
+    warnings = _check_output_file(output_log_path)
+
+    errors = []
+    errors.extend(_check_vocab_bounds(allowed_token_ids, vocab_size))
+    errors.extend(_check_dataset_format(dataset, config))
+
     for w in warnings:
         logger.warning(f"PREFLIGHT WARNING: {w}")
+
     if errors:
         for e in errors:
             logger.error(f"PREFLIGHT ERROR: {e}")
