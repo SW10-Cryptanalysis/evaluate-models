@@ -1,0 +1,112 @@
+import pytest
+import logging
+from pathlib import Path
+from src import eval_utils
+from src.classes.config import EvalConfig
+
+
+@pytest.fixture
+def mock_config():
+    return EvalConfig(
+        vocab_size=32000,
+        pad_token_id=0,
+        bos_token_id=5,
+        eos_token_id=6,
+        max_context=4096,
+        use_spaces=True,
+    )
+
+
+class TestEvalUtils:
+    def test_closest_n(self):
+        assert eval_utils.closest_n(350) == 350
+        assert eval_utils.closest_n(349) == 350
+        assert eval_utils.closest_n(100000) == 10000  # Caps out at highest bucket
+        assert eval_utils.closest_n(0) == 350  # Caps at lowest bucket
+
+    def test_build_allowed_token_ids_with_spaces(self, mock_config):
+        ids = eval_utils.build_allowed_token_ids(mock_config)
+        assert len(ids) == 27  # 26 letters + 1 space
+        assert mock_config.space_token_id in ids
+
+    def test_build_allowed_token_ids_without_spaces(self, mock_config):
+        mock_config.use_spaces = False
+        ids = eval_utils.build_allowed_token_ids(mock_config)
+        assert len(ids) == 26
+        assert mock_config.space_token_id not in ids
+
+    def test_decode_prediction(self, mock_config):
+        # char_offset = eos (6) + 1 = 7. 'a' is 7, 'b' is 8.
+        # space_token_id = bos (5) - 1 = 4.
+        ids = [7, 8, 4, 9]
+        decoded = eval_utils.decode_prediction(ids, mock_config)
+        assert decoded == "ab_c"
+
+    def test_decode_prediction_out_of_bounds(self, mock_config):
+        ids = [1]  # Below char offset and not space
+        decoded = eval_utils.decode_prediction(ids, mock_config)
+        assert decoded == "?"
+
+    def test_decode_ciphertext(self, mock_config):
+        # bos_token_id = 5, sep_token_id = 3
+        ids = [5, 100, 200, 3, 300]
+        decoded = eval_utils.decode_ciphertext(ids, mock_config)
+        assert decoded == "100 200 300"
+
+    def test_calculate_ser(self):
+        assert eval_utils.calculate_ser("hello", "hello") == 0.0
+        assert eval_utils.calculate_ser("hello", "hallo") == 0.2
+        assert eval_utils.calculate_ser("hello", "world") == 0.8
+
+    def test_calculate_ser_empty_string(self):
+        with pytest.raises(ValueError, match="True plaintext is empty"):
+            eval_utils.calculate_ser("", "pred")
+
+    def test_check_output_file_exists(self, tmp_path):
+        dummy_file = tmp_path / "exists.txt"
+        dummy_file.touch()
+        warnings = eval_utils._check_output_file(dummy_file)
+        assert len(warnings) == 1
+        assert "OVERWRITTEN" in warnings[0]
+
+    def test_check_vocab_bounds(self):
+        errors = eval_utils._check_vocab_bounds([100, 200, 3000], vocab_size=500)
+        assert len(errors) == 1
+        assert "3000" in errors[0]
+
+    def test_check_dataset_format_valid(self, mock_config):
+        dataset = [
+            {
+                "input_ids": [
+                    mock_config.bos_token_id,
+                    100,
+                    mock_config.sep_token_id,
+                    200,
+                    mock_config.eos_token_id,
+                ]
+            }
+        ]
+        errors = eval_utils._check_dataset_format(dataset, mock_config)
+        assert len(errors) == 0
+
+    def test_check_dataset_format_invalid(self, mock_config):
+        dataset = [
+            {"input_ids": [999, 100, 200, mock_config.eos_token_id]}
+        ]  # Missing BOS and SEP
+        errors = eval_utils._check_dataset_format(dataset, mock_config)
+        assert len(errors) > 0
+
+    def test_run_preflight_checks_raises_runtime_error(self, mock_config):
+        logger = logging.getLogger("test_logger")
+        # Pass empty lists to force a dataset format error (no BOS/EOS/SEP)
+        dataset = [{"input_ids": [1, 2, 3]}]
+
+        with pytest.raises(RuntimeError, match="Preflight checks failed"):
+            eval_utils.run_preflight_checks(
+                config=mock_config,
+                dataset=dataset,
+                allowed_token_ids=[100],
+                output_log_path=Path("dummy"),
+                vocab_size=32000,
+                logger=logger,
+            )
