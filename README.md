@@ -23,26 +23,26 @@ Evaluations are triggered via SLURM. The SLURM script automatically synchronizes
 
 **Standard Execution:**
 ```bash
-sbatch --gres=gpu:l4:<NUM_GPUS> eval.slurm --model_path /path/to/model
+sbatch --gres=gpu:l4:<NUM_GPUS> eval.slurm --model_path /path/to/model --title "Your Graph Title Here"
 ```
 
 **Examples**
 ## 4 GPUs (e.g., for a model with 8 attention heads and 2560 vocab size)
 ```bash
-sbatch --gres=gpu:l4:4 eval.slurm --model_path outputs/checkpoint-16750
+sbatch --gres=gpu:l4:4 eval.slurm --model_path outputs/checkpoint-16750 --title "Checkpoint 16750"
 ```
 
 ## 4 GPUs with space character inclusion
 ```bash
-sbatch --gres=gpu:l4:4 eval.slurm --model_path outputs/checkpoint-16750 --spaces
+sbatch --gres=gpu:l4:4 eval.slurm --model_path outputs/checkpoint-16750 --spaces --title "Checkpoint 16750 - Spaced"
 ```
 
 ## 2 GPUs (e.g., for a model with 6 attention heads and 2560 vocab size)
 ```bash
-sbatch --gres=gpu:l4:2 eval.slurm --model_path outputs/llama_no_spaces_ucloud
+sbatch --gres=gpu:l4:2 eval.slurm --model_path outputs/llama_no_spaces_ucloud --title "Llama Base Model No Spaces"
 ```
 
 **Visualization**
 ```bash
-uv run python -m src.visualize_eval --eval_file_path /path/to/evaluation_results.jsonl
+uv run python -m src.visualize_eval --eval_file_path /path/to/evaluation_results.jsonl --title "Manual Regeneration Graph"
 ```
