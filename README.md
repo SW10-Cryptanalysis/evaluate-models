@@ -46,3 +46,12 @@ sbatch --gres=gpu:l4:2 eval.slurm --model_path outputs/llama_no_spaces_ucloud --
 ```bash
 uv run python -m src.visualize_eval --eval_file_path /path/to/evaluation_results.jsonl --title "Manual Regeneration Graph"
 ```
+
+## Testing & Linting
+```bash
+uv run ruff check
+```
+
+```bash
+uv run pytest
+```

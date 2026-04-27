@@ -143,6 +143,7 @@ class VLLMCipherEvaluator:
         """Decode predictions, calculate SER, and aggregate results with statistical bucketing."""
         all_results = []
         total_ser = 0.0
+        total_wrong_spaces = 0
         group_stats = {}
 
         for sample, output in zip(parsed_samples, outputs, strict=False):
@@ -150,7 +151,7 @@ class VLLMCipherEvaluator:
             pred_plain = eval_utils.decode_prediction(pred_ids, self.config)
             true_plain = sample["true_plain"]
 
-            ser = eval_utils.calculate_ser(true_plain, pred_plain)
+            ser, wrong_spaces = eval_utils.calculate_ser(true_plain, pred_plain)
 
             result_dict = {
                 "index": sample["index"],
@@ -162,22 +163,28 @@ class VLLMCipherEvaluator:
                 "plaintext": true_plain,
                 "predicted_plaintext": pred_plain,
                 "ser": ser,
+                "wrong_spaces": wrong_spaces,
             }
             all_results.append(result_dict)
             total_ser += ser
+            total_wrong_spaces += wrong_spaces
 
             cipher_length = len(sample["raw_cipher_ids"])
             bucket = eval_utils.closest_n(cipher_length)
             key = (bucket, sample["redundancy"])
             if key not in group_stats:
-                group_stats[key] = {"total_ser": 0.0, "count": 0}
+                group_stats[key] = {"total_ser": 0.0, "wrong_spaces": 0, "count": 0}
             group_stats[key]["total_ser"] += ser
+            group_stats[key]["wrong_spaces"] += wrong_spaces
             group_stats[key]["count"] += 1
 
         all_results.sort(key=lambda r: r["index"])
 
         processed_count = len(all_results)
         global_avg_ser = total_ser / processed_count if processed_count else 0.0
+        global_avg_wrong_spaces = (
+            total_wrong_spaces / processed_count if processed_count else 0
+        )
 
         with open(self.output_log_path, "w") as f:
             for result in all_results:
@@ -187,7 +194,8 @@ class VLLMCipherEvaluator:
                     {
                         "type": "summary_global",
                         "processed_count": processed_count,
-                        "avg_ser": round(global_avg_ser, 6),
+                        "global_avg_ser": round(global_avg_ser, 4),
+                        "global_avg_wrong_spaces": round(global_avg_wrong_spaces, 4),
                         "total_inference_time": round(total_time, 2),
                     },
                 )
@@ -197,6 +205,7 @@ class VLLMCipherEvaluator:
             for (n, redundancy), stats in sorted(group_stats.items()):
                 count = stats["count"]
                 avg = stats["total_ser"] / count
+                avg_wrong_spaces = stats["wrong_spaces"] / count
                 logger.info(
                     f"  N={n:>5}  μ={redundancy:>3}  count={count:>3}  avg_ser={avg:.4f}",
                 )
@@ -207,7 +216,8 @@ class VLLMCipherEvaluator:
                             "n": n,
                             "redundancy": redundancy,
                             "count": count,
-                            "avg_ser": round(avg, 6),
+                            "avg_ser": round(avg, 4),
+                            "avg_wrong_spaces": round(avg_wrong_spaces, 4),
                         },
                     )
                     + "\n",

@@ -50,10 +50,44 @@ class TestEvalUtils:
         decoded = eval_utils.decode_ciphertext(ids, mock_config)
         assert decoded == "100 200 300"
 
-    def test_calculate_ser(self):
-        assert eval_utils.calculate_ser("hello", "hello") == 0.0
-        assert eval_utils.calculate_ser("hello", "hallo") == 0.2
-        assert eval_utils.calculate_ser("hello", "world") == 0.8
+    def test_calculate_ser_basic(self):
+        assert eval_utils.calculate_ser("hello", "hello") == (0.0, 0)
+        assert eval_utils.calculate_ser("hello", "hallo") == (0.2, 0)
+        assert eval_utils.calculate_ser("hello", "world") == (0.8, 0)
+
+    def test_calculate_ser_ignores_spaces_and_underscores(self):
+        # 10 scored symbols, 0 errors. Both space and underscore should be skipped.
+        assert eval_utils.calculate_ser("hello world", "hello_world") == (0.0, 0)
+
+        # 10 scored symbols, 1 error ('e' vs 'a'). The space/underscore is skipped.
+        assert eval_utils.calculate_ser("hello world", "hallo_world") == (0.1, 0)
+
+        # 3 scored symbols ('a', 'b', 'c'/'z'). 2 skipped. 1 error out of 3.
+        assert eval_utils.calculate_ser("a_b_c", "a_b_z") == (1 / 3, 0)
+
+        # Space in prediction, letter in truth. Tuple is skipped entirely.
+        # Scored symbols: 2 ('a', 'b'). Errors: 0.
+        assert eval_utils.calculate_ser("axb", "a_b") == (1 / 3, 0)
+
+    def test_calculate_ser_wrong_spaces(self):
+        # 10 scored symbols, 0 errors, but 1 wrong space. SER should still be 0.0.
+        assert eval_utils.calculate_ser("hello world", "hellotworld") == (0.0, 1)
+
+        # 15 scored symbols, 1 error, and 1 wrong space. SER should be 1/15.
+        assert eval_utils.calculate_ser("hello_world_today", "halloxworld_today") == (
+            1 / 15,
+            1,
+        )
+
+        # 20 scored symbols, 0 errors, and 2 wrong spaces. SER should be 0.0.
+        assert eval_utils.calculate_ser(
+            "hello_world_hello_world", "helloxworld_helloyworld"
+        ) == (0.0, 2)
+
+    def test_calculate_ser_all_skipped(self):
+        # Edge case where all characters are spaces or underscores
+        assert eval_utils.calculate_ser("   ", "___") == (0.0, 0)
+        assert eval_utils.calculate_ser("_ _", "   ") == (0.0, 0)
 
     def test_calculate_ser_empty_string(self):
         with pytest.raises(ValueError, match="True plaintext is empty"):
