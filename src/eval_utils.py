@@ -44,16 +44,19 @@ def decode_ciphertext(ids: list[int], config: EvalConfig) -> str:
     return " ".join(str(idx) for idx in ids if idx not in excluded)
 
 
-def calculate_ser(true_plain: str, pred_plain: str) -> float:
+def calculate_ser(true_plain: str, pred_plain: str) -> tuple[float, int]:
     """Calculate the Symbol Error Rate (SER), explicitly ignoring spaces."""
     if not true_plain:
         raise ValueError("True plaintext is empty, cannot calculate SER.")
 
     mismatches = 0
     scored_symbols = 0
+    wrong_spaces = 0
 
     for t, p in zip(true_plain, pred_plain, strict=True):
         if t in ("_", " "):
+            if p not in ("_", " "):
+                wrong_spaces += 1
             continue
 
         scored_symbols += 1
@@ -61,9 +64,9 @@ def calculate_ser(true_plain: str, pred_plain: str) -> float:
             mismatches += 1
 
     if scored_symbols == 0:
-        return 0.0
+        return 0.0, 0
 
-    return mismatches / scored_symbols
+    return mismatches / scored_symbols, wrong_spaces
 
 
 def _check_output_file(output_log_path: Path) -> list[str]:
