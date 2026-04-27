@@ -45,11 +45,25 @@ def decode_ciphertext(ids: list[int], config: EvalConfig) -> str:
 
 
 def calculate_ser(true_plain: str, pred_plain: str) -> float:
-    """Calculate the Symbol Error Rate (SER)."""
+    """Calculate the Symbol Error Rate (SER), explicitly ignoring spaces."""
     if not true_plain:
         raise ValueError("True plaintext is empty, cannot calculate SER.")
-    mismatches = sum(t != p for t, p in zip(true_plain, pred_plain, strict=True))
-    return mismatches / len(true_plain)
+
+    mismatches = 0
+    scored_symbols = 0
+
+    for t, p in zip(true_plain, pred_plain, strict=True):
+        if t in ("_", " "):
+            continue
+
+        scored_symbols += 1
+        if t != p:
+            mismatches += 1
+
+    if scored_symbols == 0:
+        return 0.0
+
+    return mismatches / scored_symbols
 
 
 def _check_output_file(output_log_path: Path) -> list[str]:
