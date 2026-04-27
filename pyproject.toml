@@ -1,0 +1,101 @@
+[project]
+name = "evaluate-models"
+version = "0.1.0"
+description = "Evaluation pipeline for joint-sequence homophonic cipher modeling"
+readme = "README.md"
+requires-python = ">=3.12, <3.13"
+dependencies = [
+    "datasets>=4.8.4",
+    "easy-logging-formatter>=0.1.1",
+    "matplotlib>=3.10.9",
+    "tokenizers>=0.22.2",
+    "torch==2.9.0",
+    "transformers>=4.57.6",
+    "vllm>=0.13.0; sys_platform == 'linux'",
+]
+
+[tool.uv]
+environments = [
+  "sys_platform == 'linux'",
+  "sys_platform == 'win32'",
+  "sys_platform == 'darwin' and platform_machine == 'arm64'",
+  "sys_platform == 'darwin' and platform_machine == 'x86_64'",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.4.2",
+  "pytest-cov>=7.0.0",
+  "pytest-mock>=3.15.1",
+  "ruff>=0.15.2",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["test"]
+addopts = "-v --tb=short --cov=src --cov-report=term-missing"
+
+[tool.coverage.report]
+exclude_also = ["if 0:", "if __name__ == .__main__.:", "import", "from"]
+omit = ["src/model.py"]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+exclude = [
+  "venv",
+  ".venv",
+  "__pycache__",
+  "build",
+  "dist",
+  ".eggs",
+  "*.egg",
+  ".mypy_cache",
+  ".pytest_cache",
+]
+select = [
+  "E",
+  "F",
+  "W",
+  "C90",
+  "B",
+  "B9",
+  "ANN",
+  "COM",
+  "D",
+  "ERA",
+  "ISC",
+  "N",
+  "Q000",
+  "S",
+  "SIM",
+  "TID251",
+  "UP",
+  "YTT",
+  "T",
+]
+ignore = [
+  "ERA001", # Found commented-out code
+  "S311",   # Standard pseudo-random generators are not suitable for security/cryptographic purposes
+  "D206",   # Docstring should be indented with spaces equal to the surrounding code
+  "D100",   # Missing docstring in public module
+  "D203",   # incorrect-blank-line-before-class
+  "D213",   # multi-line-summary-second-line
+  "UP035",  # Import from `collections.abc`instead: ...
+  "ANN401", # Dynamically typed expressions (typing.Any) are disallowed 
+  "E501",   # Line too long
+  "D401",   # First line should be in imperative mood
+]
+
+[tool.ruff.lint.per-file-ignores]
+"test/**/*.py" = [
+  "S101",   # Use of assert detected
+  "D",      # All docstring rules
+  "ANN",    # All type annotation rules
+  "E501",   # Line too long
+  "COM812", # Missing trailing comma in a list or dict
+  "ERA001", # Found commented-out code
+]
+[tool.ruff.format]
+indent-style = "space"
