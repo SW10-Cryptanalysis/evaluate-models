@@ -173,7 +173,7 @@ class VLLMCipherEvaluator:
             bucket = eval_utils.closest_n(cipher_length)
             key = (bucket, sample["redundancy"])
             if key not in group_stats:
-                group_stats[key] = {"total_ser": 0.0, "count": 0}
+                group_stats[key] = {"total_ser": 0.0, "wrong_spaces": 0, "count": 0}
             group_stats[key]["total_ser"] += ser
             group_stats[key]["wrong_spaces"] += wrong_spaces
             group_stats[key]["count"] += 1

@@ -94,6 +94,7 @@ class TestVLLMCipherEvaluator:
         assert len(results) == 1
         assert results[0]["predicted_plaintext"] == "ab"
         assert results[0]["ser"] == 0.0
+        assert results[0]["wrong_spaces"] == 0
 
         assert setup_evaluator.output_log_path.exists()
         log_content = setup_evaluator.output_log_path.read_text()

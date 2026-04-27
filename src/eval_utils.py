@@ -64,9 +64,9 @@ def calculate_ser(true_plain: str, pred_plain: str) -> tuple[float, int]:
             mismatches += 1
 
     if scored_symbols == 0:
-        return 0.0, 0
+        return (0.0, 0)
 
-    return mismatches / scored_symbols, wrong_spaces
+    return (mismatches / scored_symbols, wrong_spaces)
 
 
 def _check_output_file(output_log_path: Path) -> list[str]:
