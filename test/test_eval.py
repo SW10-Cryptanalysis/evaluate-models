@@ -92,13 +92,13 @@ class TestVLLMCipherEvaluator:
         )
 
         assert len(results) == 1
-        assert results[0]["predicted_plaintext"] == "ab"
         assert results[0]["ser"] == 0.0
         assert results[0]["wrong_spaces"] == 0
 
-        assert setup_evaluator.output_log_path.exists()
-        log_content = setup_evaluator.output_log_path.read_text()
-        assert "summary_global" in log_content
+        assert setup_evaluator.summary_scores_path.exists()
+        log_content = setup_evaluator.summary_scores_path.read_text()
+
+        assert "group_results" in log_content
         assert '"avg_ser": 0.0' in log_content
 
     def test_run_executes_successfully(self, setup_evaluator, mocker, tmp_path):
@@ -117,7 +117,7 @@ class TestVLLMCipherEvaluator:
         results = setup_evaluator.run()
 
         assert len(results) == 1
-        assert results[0]["predicted_plaintext"] == "ab"
+        assert results[0]["ser"] == 0.0
         mock_llm_instance.generate.assert_called_once()
 
     def test_run_aborts_without_global_tokenizer(
