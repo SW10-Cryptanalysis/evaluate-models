@@ -60,7 +60,7 @@ uv pip install https://github.com/mjun0812/flash-attention-prebuild-wheels/relea
 export TOKENIZERS_PARALLELISM=false
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
 export VLLM_USE_V1=0
-export CUDA_VISIBLE_DEVICES=0,1
+export CUDA_VISIBLE_DEVICES=0
 
 # Build the argument array based on the configuration block
 EVAL_ARGS=("--model_path" "$MODEL_PATH")

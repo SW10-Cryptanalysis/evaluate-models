@@ -74,7 +74,7 @@ class VLLMCipherEvaluator:
             )
             sys.exit(1)
 
-        logger.info(f"Initializing vLLM across {self.world_size} L4 GPUs...")
+        logger.info(f"Initializing vLLM across {self.world_size} GPUs...")
 
         # 2. Point vLLM's `tokenizer` argument to our global directory
         llm = LLM(
