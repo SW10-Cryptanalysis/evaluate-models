@@ -21,7 +21,7 @@ Evaluations are triggered via SLURM. The SLURM script automatically synchronizes
 > 
 > *For example: If your model has 6 attention heads and a vocabulary size of 2560, you must allocate 2 GPUs (since 6 is divisible by 3, but 2560 is not).*
 
-**Standard Execution:**
+**Standard Execution on AI-Lab:**
 ```bash
 sbatch --gres=gpu:l4:<NUM_GPUS> eval.slurm --model_path /path/to/model --title "Your Graph Title Here"
 ```
@@ -41,6 +41,13 @@ sbatch --gres=gpu:l4:4 eval.slurm --model_path outputs/checkpoint-16750 --spaces
 ```bash
 sbatch --gres=gpu:l4:2 eval.slurm --model_path outputs/llama_no_spaces_ucloud --title "Llama Base Model No Spaces"
 ```
+
+**Standard Execution on UCloud:**
+Look at eval.sh script
+1. Modify the 3 variables at the top of eval.sh; TARGET_MODEL_DIR, EVAL_TITLE, USE_SPACES.
+2. The .sh script is setup to run with only 1 GPU and not MIG partitions. Therefore, just pick 1 B200 GPU.
+3. The PyTorch container on UCloud version 25.10 runs PyTorch 2.10 and python 3.12, so pick this version.
+4. Upload the model to be evaluated into the "Models" drive on UCloud and use the newly made directory as TARGET_MODEL_DIR.
 
 **Visualization**
 ```bash
