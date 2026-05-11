@@ -15,8 +15,15 @@ USE_SPACES=false
 # ==============================================================================
 
 # Navigate to your mounted workspace
-cd /work/evaluate-models
+cd /work
 
+# 2. Clone the repository and specific branch if it doesn't exist yet
+if [ ! -d "evaluate-models" ]; then
+    echo "Cloning repository..."
+    git clone -b UCloud https://github.com/SW10-Cryptanalysis/evaluate-models.git
+fi
+
+cd evaluate-models
 mkdir -p logs
 LOG_FILE="logs/eval_live_$(date +%s).log"
 
