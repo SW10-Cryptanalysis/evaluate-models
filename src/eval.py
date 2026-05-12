@@ -20,7 +20,7 @@ logger.setLevel(logging.INFO)
 
 
 class VLLMCipherEvaluator:
-    """Evaluator class that uses vLLM to assess cipher decryption performance."""
+    """Evaluator class that uses vLLM to assess cipher decryption performance across a test dataset."""
 
     def __init__(self, model_path: str, use_spaces: bool) -> None:
         """Initialize the evaluator with model path and configuration."""
@@ -29,38 +29,28 @@ class VLLMCipherEvaluator:
         self.config.use_spaces = use_spaces
 
         self.output_log_path = Path(self.model_path) / "evaluation_results.jsonl"
-        self.summary_scores_path = Path(self.model_path) / "avg_ser_scores.json"
-
         self.dataset = load_from_disk(self.config.tokenized_dir / "Test")
         self.allowed_token_ids = eval_utils.build_allowed_token_ids(self.config)
 
+        # Detect available L4 GPUs for Tensor Parallelism
         self.world_size = torch.cuda.device_count()
         if self.world_size == 0:
             raise RuntimeError("vLLM requires CUDA devices, but none were found.")
 
-        self.skipped_count = 0
-
     def parse_samples(self) -> list[dict]:
-        """Extract prompt token IDs and track skipped samples."""
+        """Extract prompt token IDs (up to SEP) and target lengths."""
         parsed_data = []
-        self.skipped_count = 0  # Reset counter
-
         for index, item in enumerate(self.dataset):
             all_ids = item["input_ids"]
             try:
                 sep_idx = all_ids.index(self.config.sep_token_id)
+                # Model receives up to and including [SEP] to trigger Mapping Logic
                 prompt_ids = all_ids[: sep_idx + 1]
                 raw_cipher_ids = all_ids[1:sep_idx]
             except ValueError:
                 continue
 
             target_length = len(raw_cipher_ids)
-            total_required_context = len(prompt_ids) + target_length
-
-            if total_required_context > self.config.max_context:
-                self.skipped_count += 1
-                continue
-
             if target_length > 0:
                 parsed_data.append(
                     {
@@ -72,16 +62,11 @@ class VLLMCipherEvaluator:
                         "target_length": target_length,
                     },
                 )
-
-        if self.skipped_count > 0:
-            logger.warning(
-                f"Skipped {self.skipped_count} samples that exceeded max_context ({self.config.max_context})",
-            )
-
         return parsed_data
 
     def run(self) -> list[dict]:
-        """Main method to execute the evaluation process."""
+        """Main method to execute the evaluation process: initializes vLLM, runs inference, and processes outputs."""
+        # 1. Sanity Check: Ensure the global tokenizer exists before booting vLLM
         if not EvalConfig.tokenizer_dir.exists():
             logger.error(f"Global tokenizer not found at {EvalConfig.tokenizer_dir}.")
             logger.error(
@@ -91,6 +76,7 @@ class VLLMCipherEvaluator:
 
         logger.info(f"Initializing vLLM across {self.world_size} GPUs...")
 
+        # 2. Point vLLM's `tokenizer` argument to our global directory
         llm = LLM(
             model=self.model_path,
             tokenizer=str(EvalConfig.tokenizer_dir),
@@ -107,6 +93,7 @@ class VLLMCipherEvaluator:
             if llm.get_tokenizer()
             else self.config.vocab_size
         )
+
         eval_utils.run_preflight_checks(
             self.config,
             self.dataset,
@@ -117,7 +104,9 @@ class VLLMCipherEvaluator:
         )
 
         valid_allowed_ids = [t for t in self.allowed_token_ids if t < vocab_size]
+
         parsed_samples = self.parse_samples()
+
         parsed_samples.sort(key=lambda x: x["target_length"], reverse=True)
 
         prompts = []
@@ -137,7 +126,9 @@ class VLLMCipherEvaluator:
 
         logger.info(f"Launching batched inference for {len(prompts)} sequences...")
         start_time = time.perf_counter()
+
         outputs = llm.generate(prompts, sampling_params=sampling_params_list)
+
         generation_time = time.perf_counter() - start_time
         logger.info(f"Inference complete in {generation_time:.2f} seconds.")
 
@@ -149,8 +140,10 @@ class VLLMCipherEvaluator:
         outputs: list[RequestOutput],
         total_time: float,
     ) -> list[dict]:
-        """Decode predictions, calculate SER, and save summary results."""
+        """Decode predictions, calculate SER, and aggregate results with statistical bucketing."""
         all_results = []
+        total_ser = 0.0
+        total_wrong_spaces = 0
         group_stats = {}
 
         for sample, output in zip(parsed_samples, outputs, strict=False):
@@ -163,48 +156,74 @@ class VLLMCipherEvaluator:
             result_dict = {
                 "index": sample["index"],
                 "redundancy": sample["redundancy"],
+                "ciphertext": eval_utils.decode_ciphertext(
+                    sample["raw_cipher_ids"],
+                    self.config,
+                ),
+                "plaintext": true_plain,
+                "predicted_plaintext": pred_plain,
                 "ser": ser,
                 "wrong_spaces": wrong_spaces,
             }
             all_results.append(result_dict)
+            total_ser += ser
+            total_wrong_spaces += wrong_spaces
 
             cipher_length = len(sample["raw_cipher_ids"])
             bucket = eval_utils.closest_n(cipher_length)
             key = (bucket, sample["redundancy"])
             if key not in group_stats:
-                group_stats[key] = {"total_ser": 0.0, "count": 0}
+                group_stats[key] = {"total_ser": 0.0, "wrong_spaces": 0, "count": 0}
             group_stats[key]["total_ser"] += ser
+            group_stats[key]["wrong_spaces"] += wrong_spaces
             group_stats[key]["count"] += 1
 
-        # Prepare summary data for the new file
-        summary_data = {
-            "model_path": self.model_path,
-            "total_skipped_ciphers": self.skipped_count,
-            "group_results": [],
-        }
+        all_results.sort(key=lambda r: r["index"])
 
-        for (n, redundancy), stats in sorted(group_stats.items()):
-            count = stats["count"]
-            avg_ser = stats["total_ser"] / count
+        processed_count = len(all_results)
+        global_avg_ser = total_ser / processed_count if processed_count else 0.0
+        global_avg_wrong_spaces = (
+            total_wrong_spaces / processed_count if processed_count else 0
+        )
 
-            logger.info(
-                f"  N={n:>5}  μ={redundancy:>3}  count={count:>3}  avg_ser={avg_ser:.4f}",
+        with open(self.output_log_path, "w") as f:
+            for result in all_results:
+                f.write(json.dumps(result) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "type": "summary_global",
+                        "processed_count": processed_count,
+                        "global_avg_ser": round(global_avg_ser, 4),
+                        "global_avg_wrong_spaces": round(global_avg_wrong_spaces, 4),
+                        "total_inference_time": round(total_time, 2),
+                    },
+                )
+                + "\n",
             )
 
-            summary_data["group_results"].append(
-                {
-                    "n": n,
-                    "redundancy": redundancy,
-                    "count": count,
-                    "avg_ser": round(avg_ser, 4),
-                },
-            )
+            for (n, redundancy), stats in sorted(group_stats.items()):
+                count = stats["count"]
+                avg = stats["total_ser"] / count
+                avg_wrong_spaces = stats["wrong_spaces"] / count
+                logger.info(
+                    f"  N={n:>5}  μ={redundancy:>3}  count={count:>3}  avg_ser={avg:.4f}",
+                )
+                f.write(
+                    json.dumps(
+                        {
+                            "type": "summary_group",
+                            "n": n,
+                            "redundancy": redundancy,
+                            "count": count,
+                            "avg_ser": round(avg, 4),
+                            "avg_wrong_spaces": round(avg_wrong_spaces, 4),
+                        },
+                    )
+                    + "\n",
+                )
 
-        # Save to avg_ser_scores.json
-        with open(self.summary_scores_path, "w") as f:
-            json.dump(summary_data, f, indent=4)
-
-        logger.info(f"Summary scores saved to {self.summary_scores_path}")
+        logger.info(f"Results written to {self.output_log_path}")
         return all_results
 
 
