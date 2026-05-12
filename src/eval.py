@@ -29,8 +29,11 @@ class VLLMCipherEvaluator:
         self.config.use_spaces = use_spaces
 
         self.output_log_path = Path(self.model_path) / "evaluation_results.jsonl"
+        self.stats_log_path = Path(self.model_path) / "evaluation_stats.json"
         self.dataset = load_from_disk(self.config.tokenized_dir / "Test")
         self.allowed_token_ids = eval_utils.build_allowed_token_ids(self.config)
+
+        self.skipped_count = 0
 
         # Detect available L4 GPUs for Tensor Parallelism
         self.world_size = torch.cuda.device_count()
@@ -40,6 +43,7 @@ class VLLMCipherEvaluator:
     def parse_samples(self) -> list[dict]:
         """Extract prompt token IDs (up to SEP) and target lengths."""
         parsed_data = []
+        self.skipped_count = 0
         for index, item in enumerate(self.dataset):
             all_ids = item["input_ids"]
             try:
@@ -51,6 +55,12 @@ class VLLMCipherEvaluator:
                 continue
 
             target_length = len(raw_cipher_ids)
+            total_required_context = len(prompt_ids) + target_length
+
+            if total_required_context > self.config.max_context:
+                self.skipped_count += 1
+                continue
+
             if target_length > 0:
                 parsed_data.append(
                     {
@@ -74,7 +84,7 @@ class VLLMCipherEvaluator:
             )
             sys.exit(1)
 
-        logger.info(f"Initializing vLLM across {self.world_size} L4 GPUs...")
+        logger.info(f"Initializing vLLM across {self.world_size} GPUs...")
 
         # 2. Point vLLM's `tokenizer` argument to our global directory
         llm = LLM(
@@ -186,6 +196,9 @@ class VLLMCipherEvaluator:
             total_wrong_spaces / processed_count if processed_count else 0
         )
 
+        # Dictionary to hold data for evaluation_stats.json
+        evaluation_stats = {"skipped_count": self.skipped_count, "group_logs": []}
+
         with open(self.output_log_path, "w") as f:
             for result in all_results:
                 f.write(json.dumps(result) + "\n")
@@ -206,9 +219,14 @@ class VLLMCipherEvaluator:
                 count = stats["count"]
                 avg = stats["total_ser"] / count
                 avg_wrong_spaces = stats["wrong_spaces"] / count
-                logger.info(
-                    f"  N={n:>5}  μ={redundancy:>3}  count={count:>3}  avg_ser={avg:.4f}",
-                )
+
+                # Format the log string
+                log_str = f"  N={n:>5}  μ={redundancy:>3}  count={count:>3}  avg_ser={avg:.4f}"
+                logger.info(log_str)
+
+                # Append to our stats JSON payload
+                evaluation_stats["group_logs"].append(log_str)
+
                 f.write(
                     json.dumps(
                         {
@@ -224,6 +242,11 @@ class VLLMCipherEvaluator:
                 )
 
         logger.info(f"Results written to {self.output_log_path}")
+
+        with open(self.stats_log_path, "w") as sf:
+            json.dump(evaluation_stats, sf, indent=4)
+        logger.info(f"Stats written to {self.stats_log_path}")
+
         return all_results
 
 

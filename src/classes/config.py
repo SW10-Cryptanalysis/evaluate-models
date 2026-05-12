@@ -2,9 +2,8 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 
-
 DATA_DIR = Path(__file__).parent.parent.parent.parent / "Ciphers"
-TOKENIZER_DIR = Path(__file__).parent.parent.parent / "tokenizer"
+TOKENIZER_DIR = Path(__file__).parent.parent.parent.parent / "Models/tokenizer"
 
 
 @dataclass
