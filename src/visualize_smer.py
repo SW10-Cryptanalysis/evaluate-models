@@ -60,8 +60,6 @@ def main() -> None:
         logger.info("No valid sample data found in the SMER file.")
         return
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-
     min_smer = min(smers)
     y_min = math.floor(min_smer * 10) / 10.0
     y_limit_min = max(0.0, y_min - 0.02)

@@ -47,7 +47,7 @@ class StrictMapper:
 
         output_data = []
 
-        with open(self.results_path) as f:
+        with open(self.results_path, encoding="utf-8") as f:
             for i, line in enumerate(f):
                 line = line.strip()
                 if not line:
@@ -66,10 +66,9 @@ class StrictMapper:
                 if result:
                     output_data.append(result)
 
-        with open(self.output_path, "w") as f:
+        with open(self.output_path, "w", encoding="utf-8") as f:
             for entry in output_data:
                 f.write(json.dumps(entry) + "\n")
-            f.write(json.dumps({"threshold": self.threshold}))
 
         logger.info(f"Successfully processed {len(output_data)} entries.")
         logger.info(f"Results saved to: {self.output_path}")
@@ -127,13 +126,14 @@ class StrictMapper:
             "smer": invalid / total_symbols,
             "cipher_len": len(cipher),
             "redundancy": data.get("redundancy"),
+            "threshold": self.threshold,
         }
 
 def main() -> None:
     """Entry point for calculating SMER."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", type=str, required=True)
-    parser.add_argument("--threshold", type=float, required=False)
+    parser.add_argument("--threshold", type=float, default=0.95)
     args = parser.parse_args()
 
     mapper = StrictMapper(args.model_path, args.threshold)

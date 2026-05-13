@@ -160,20 +160,16 @@ class TestSMER(unittest.TestCase):
         self.assertTrue(output_file.exists())
 
         results = []
-        threshold_entry = None
 
         with open(output_file) as f:
             for line in f:
                 data = json.loads(line)
                 if "index" in data:
                     results.append(data)
-                elif "threshold" in data:
-                    threshold_entry = data
 
         self.assertEqual(results[0]["smer"], 0.0)
         self.assertEqual(results[1]["smer"], 0.5)
         self.assertEqual(results[2]["smer"], 0.5)
-        self.assertEqual(threshold_entry["threshold"], 0.95)
 
 @patch("src.smer.argparse.ArgumentParser.parse_args")
 @patch("src.smer.StrictMapper")
