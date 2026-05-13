@@ -12,10 +12,6 @@ class TestSMER(unittest.TestCase):
         self.test_dir.mkdir(exist_ok=True)
         self.results_path = self.test_dir / "evaluation_results.jsonl"
 
-        # We will define 3 scenarios:
-        # 1. Perfect mapping (SMER = 0.0)
-        # 2. Unstable mapping (Frequency < 0.95)
-        # 3. Stable but Wrong mapping
         self.mock_data = [
             # Perfect mapping
             # '1' -> 'a', '2' -> 'b'. consistent, correct.
@@ -174,39 +170,21 @@ class TestSMER(unittest.TestCase):
                 elif "threshold" in data:
                     threshold_entry = data
 
-        # Verification
-        # Entry 0: SMER should be 0.0 (Perfect)
         self.assertEqual(results[0]["smer"], 0.0)
-
-        # Entry 1: Symbol '1' is unstable (0.5 < 0.95).
-        # Out of 2 unique symbols (1, 2), one failed. SMER = 1/2 = 0.5
         self.assertEqual(results[1]["smer"], 0.5)
-
-        # Entry 2: Symbol '1' is stable but wrong ('z' != 'a').
-        # Out of 2 unique symbols, one failed. SMER = 0.5
         self.assertEqual(results[2]["smer"], 0.5)
-
-        # Metadata check
         self.assertEqual(threshold_entry["threshold"], 0.95)
 
 @patch("src.smer.argparse.ArgumentParser.parse_args")
 @patch("src.smer.StrictMapper")
 def test_smer_main_flow(mock_mapper_cls, mock_parse_args):
-    # 1. Setup mock arguments
     mock_args = MagicMock()
     mock_args.model_path = "fake/model/path"
     mock_args.threshold = 0.90
     mock_parse_args.return_value = mock_args
 
-    # 2. Execute main
     main()
-
-    # 3. Verify StrictMapper was instantiated with correct args
-    # Because @patch("src.smer.StrictMapper") is the bottom-most decorator (excluding parse_args),
-    # it is the first argument after 'self': mock_mapper_cls
     mock_mapper_cls.assert_called_once_with("fake/model/path", 0.90)
-
-    # 4. Verify that the calculation method was triggered on the instance
     mock_mapper_cls.return_value.calculate_smer.assert_called_once()
 
 @patch("src.smer.argparse.ArgumentParser.parse_args")
@@ -220,7 +198,6 @@ def test_smer_main_default_threshold(mock_mapper_cls, mock_parse_args):
 
     main()
 
-    # Verify it passed None to the Mapper
     mock_mapper_cls.assert_called_once_with("another/path", None)
 
 if __name__ == "__main__":
