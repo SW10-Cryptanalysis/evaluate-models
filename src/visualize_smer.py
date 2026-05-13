@@ -64,7 +64,7 @@ def main() -> None:
 
     min_smer = min(smers)
     y_min = math.floor(min_smer * 10) / 10.0
-    y_limit_min = max(0.0, y_min - 0.02) 
+    y_limit_min = max(0.0, y_min - 0.02)
     y_limit_max = 1.01
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))

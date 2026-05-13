@@ -12,13 +12,35 @@ logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
 class StrictMapper:
+    """Calculate the Strict Mapping Error Rate (SMER) for cryptanalysis.
+
+    Attributes:
+        model_path (Path): Directory containing the evaluation files.
+        threshold (float): Minimum empirical frequency (0.0 to 1.0) required to
+            consider a mapping stable. Defaults to 0.95.
+        results_path (Path): Path to the input JSONL file containing model predictions.
+        output_path (Path): Path where the calculated SMER metrics will be saved.
+
+    """
+
     def __init__(self, model_path: str, threshold: float = 0.95) -> None:
+        """Initialize the StrictMapper with paths and consistency constraints.
+
+        Args:
+            model_path (str): The root directory where 'evaluation_results.jsonl'
+                is located and where output will be stored.
+            threshold (float, optional): The noise-tolerance consistency threshold.
+                Mappings falling below this frequency are treated as unresolved.
+                Defaults to 0.95.
+
+        """
         self.model_path = Path(model_path)
         self.threshold = threshold
         self.results_path = self.model_path / "evaluation_results.jsonl"
         self.output_path = self.model_path / "smer_results.jsonl"
 
-    def calculate_smer(self):
+    def calculate_smer(self) -> None:
+        """Process evaluation results to compute the SMER per entry."""
         if not self.results_path.exists():
             logger.error(f"Input file not found: {self.results_path}")
             return
@@ -26,11 +48,12 @@ class StrictMapper:
         processed_count = 0
         output_data = []
 
-        with open(self.results_path, "r") as f:
+        with open(self.results_path) as f:
             for i, line in enumerate(f):
                 line = line.strip()
-                if not line: continue
-                
+                if not line:
+                    continue
+
                 try:
                     data = json.loads(line)
                 except json.JSONDecodeError:
@@ -56,11 +79,18 @@ class StrictMapper:
                 local_counts = {}
                 ground_truth = {}
 
-                for c, truth, guess in zip(cipher, actual, pred):
-                    if c not in local_counts:
-                        local_counts[c] = Counter()
-                    local_counts[c][guess] += 1
-                    ground_truth[c] = truth
+                try:
+                    for c, truth, guess in zip(cipher, actual, pred, strict=True):
+                        if c not in local_counts:
+                            local_counts[c] = Counter()
+                        local_counts[c][guess] += 1
+                        ground_truth[c] = truth
+                except ValueError:
+                    logger.warning(
+                        f"Line {i}: Length mismatch between ciphertext ({len(cipher)}), "
+                        f"actual ({len(actual)}), and predicted ({len(pred)}). Skipping.",
+                    )
+                    continue
 
                 total_symbols = len(local_counts)
                 invalid = 0
@@ -68,7 +98,7 @@ class StrictMapper:
                 for c, counts in local_counts.items():
                     total_obs = sum(counts.values())
                     most_common, freq = counts.most_common(1)[0]
-                    
+
                     consistency = freq / total_obs
                     stable = consistency >= self.threshold
                     correct = (most_common == ground_truth[c])
@@ -77,12 +107,12 @@ class StrictMapper:
                         invalid += 1
 
                 entry_smer = invalid / total_symbols if total_symbols > 0 else 0
-                
+
                 result = {
                     "index": data.get("index"),
                     "smer": entry_smer,
                     "cipher_len": len(cipher),
-                    "redundancy": data.get("redundancy")
+                    "redundancy": data.get("redundancy"),
                 }
 
                 output_data.append(result)
@@ -96,7 +126,8 @@ class StrictMapper:
         logger.info(f"Successfully processed {processed_count} entries.")
         logger.info(f"Results saved to: {self.output_path}")
 
-def main():
+def main() -> None:
+    """Entry point for calculating SMER."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--model_path", type=str, required=True)
     parser.add_argument("--threshold", type=float, required=False)

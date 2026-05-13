@@ -11,7 +11,7 @@ class TestSMER(unittest.TestCase):
         self.test_dir = Path("test_output")
         self.test_dir.mkdir(exist_ok=True)
         self.results_path = self.test_dir / "evaluation_results.jsonl"
-        
+
         # We will define 3 scenarios:
         # 1. Perfect mapping (SMER = 0.0)
         # 2. Unstable mapping (Frequency < 0.95)
@@ -44,7 +44,7 @@ class TestSMER(unittest.TestCase):
                 "redundancy": 2.0
             }
         ]
-        
+
         with open(self.results_path, "w") as f:
             for entry in self.mock_data:
                 f.write(json.dumps(entry) + "\n")
@@ -55,14 +55,14 @@ class TestSMER(unittest.TestCase):
         if self.test_dir.exists():
             shutil.rmtree(self.test_dir)
 
-    @patch('src.smer.logger.error')
+    @patch("src.smer.logger.error")
     def test_missing_input_file(self, mocked_logger):
         """Test that the script logs an error and returns if the file is missing."""
         fake_path = self.test_dir / "non_existent_subdir"
-        fake_path.mkdir() 
+        fake_path.mkdir()
 
         mapper = StrictMapper(model_path=str(fake_path), threshold=0.95)
-        
+
         mapper.calculate_smer()
         mocked_logger.assert_called_once()
         args, _ = mocked_logger.call_args
@@ -71,19 +71,19 @@ class TestSMER(unittest.TestCase):
         output_file = fake_path / "smer_results.jsonl"
         self.assertFalse(output_file.exists())
 
-    @patch('src.smer.logger.warning')
+    @patch("src.smer.logger.warning")
     def test_missing_crypto_keys(self, mocked_warning):
         """Test that entries with missing crypto fields are logged and skipped."""
         missing_keys_path = self.test_dir / "missing_keys.jsonl"
-        
+
         with open(missing_keys_path, "w") as f:
             f.write(json.dumps({
-                "index": 1, "ciphertext": "1 2", "plaintext": "ab", 
+                "index": 1, "ciphertext": "1 2", "plaintext": "ab",
                 "predicted_plaintext": "ab", "redundancy": 1.0
             }) + "\n")
 
             f.write(json.dumps({
-                "index": 2, "plaintext": "ab", 
+                "index": 2, "plaintext": "ab",
                 "predicted_plaintext": "ab", "redundancy": 1.0
             }) + "\n")
 
@@ -97,24 +97,24 @@ class TestSMER(unittest.TestCase):
 
         output_file = self.test_dir / "smer_results.jsonl"
         results = []
-        with open(output_file, "r") as f:
+        with open(output_file) as f:
             for line in f:
                 d = json.loads(line)
                 if "index" in d:
                     results.append(d)
-        
+
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["index"], 1)
 
     def test_json_decode_error_coverage(self):
         """Specifically targets the 'except json.JSONDecodeError' block for coverage."""
         error_path = self.test_dir / "decode_error.jsonl"
-        
+
         with open(error_path, "w") as f:
             f.write(json.dumps({"index": 1, "ciphertext": "1", "plaintext": "a", "predicted_plaintext": "a", "redundancy": 1.0}) + "\n")
-            
+
             # Malformed json
-            f.write('{"index": 2, "ciphertext": "2", \n') 
+            f.write('{"index": 2, "ciphertext": "2", \n')
 
             f.write(json.dumps({"index": 3, "ciphertext": "3", "plaintext": "c", "predicted_plaintext": "c", "redundancy": 1.0}) + "\n")
 
@@ -125,7 +125,7 @@ class TestSMER(unittest.TestCase):
 
         output_file = self.test_dir / "smer_results.jsonl"
         results = []
-        with open(output_file, "r") as f:
+        with open(output_file) as f:
             for line in f:
                 d = json.loads(line)
                 if "index" in d:
@@ -138,14 +138,14 @@ class TestSMER(unittest.TestCase):
     def test_calculate_smer(self):
         mapper = StrictMapper(model_path=str(self.test_dir), threshold=0.95)
         mapper.calculate_smer()
-        
+
         output_file = self.test_dir / "smer_results.jsonl"
         self.assertTrue(output_file.exists())
-        
+
         results = []
         threshold_entry = None
-        
-        with open(output_file, "r") as f:
+
+        with open(output_file) as f:
             for line in f:
                 data = json.loads(line)
                 if "index" in data:
@@ -156,15 +156,15 @@ class TestSMER(unittest.TestCase):
         # Verification
         # Entry 0: SMER should be 0.0 (Perfect)
         self.assertEqual(results[0]["smer"], 0.0)
-        
-        # Entry 1: Symbol '1' is unstable (0.5 < 0.95). 
+
+        # Entry 1: Symbol '1' is unstable (0.5 < 0.95).
         # Out of 2 unique symbols (1, 2), one failed. SMER = 1/2 = 0.5
         self.assertEqual(results[1]["smer"], 0.5)
-        
-        # Entry 2: Symbol '1' is stable but wrong ('z' != 'a'). 
+
+        # Entry 2: Symbol '1' is stable but wrong ('z' != 'a').
         # Out of 2 unique symbols, one failed. SMER = 0.5
         self.assertEqual(results[2]["smer"], 0.5)
-        
+
         # Metadata check
         self.assertEqual(threshold_entry["threshold"], 0.95)
 
