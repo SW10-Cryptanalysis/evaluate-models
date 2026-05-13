@@ -1,7 +1,6 @@
 import json
 import sys
 import pytest
-from unittest.mock import patch
 from src.visualize_smer import main
 
 @pytest.fixture
@@ -18,7 +17,6 @@ def model_dir(tmp_path):
             f.write(json.dumps(line) + "\n")
     return tmp_path
 
-
 @pytest.fixture
 def empty_model_dir(tmp_path):
     """Creates a directory with a jsonl file that has no valid 'index' entries."""
@@ -32,68 +30,68 @@ def empty_model_dir(tmp_path):
 
 class TestVisualizeSmer:
 
-    @patch("matplotlib.pyplot.savefig")
-    def test_main_generates_plot(self, mock_savefig, model_dir):
+    def test_main_generates_plot(self, mocker, model_dir):
         """Test that valid data in the model path results in a saved plot."""
-        test_args = [
+        mocker.patch.object(sys, "argv", [
             "visualize_smer.py",
             "--model_path", str(model_dir),
             "--title", "Test SMER Plot",
-        ]
+        ])
+        mock_savefig = mocker.patch("matplotlib.pyplot.savefig")
+        mocker.patch("matplotlib.pyplot.show")
 
-        with patch.object(sys, "argv", test_args):
-            main()
+        main()
 
         assert mock_savefig.called
         args, _ = mock_savefig.call_args
         assert "smer_visualization.png" in str(args[0])
 
-    @patch("matplotlib.pyplot.savefig")
-    @patch("src.visualize_smer.logger.info")
-    def test_main_handles_missing_file(self, mock_logger, mock_savefig, tmp_path):
+    def test_main_handles_missing_file(self, mocker, tmp_path):
         """Test that missing smer_results.jsonl logs an error and exits."""
+        mock_logger = mocker.patch("src.visualize_smer.logger.info")
+        mock_savefig = mocker.patch("matplotlib.pyplot.savefig")
+
         empty_dir = tmp_path / "empty_dir"
         empty_dir.mkdir()
 
-        test_args = [
+        mocker.patch.object(sys, "argv", [
             "visualize_smer.py",
             "--model_path", str(empty_dir),
             "--title", "Test",
-        ]
+        ])
 
-        with patch.object(sys, "argv", test_args):
-            main()
+        main()
 
         mock_savefig.assert_not_called()
         assert any("Error: File not found" in call.args[0] for call in mock_logger.call_args_list)
 
-    @patch("matplotlib.pyplot.savefig")
-    @patch("src.visualize_smer.logger.info")
-    def test_main_handles_no_valid_data(self, mock_logger, mock_savefig, empty_model_dir):
+    def test_main_handles_no_valid_data(self, mocker, empty_model_dir):
         """Test that script aborts if no lines contain an 'index' key."""
-        test_args = [
+        mock_logger = mocker.patch("src.visualize_smer.logger.info")
+        mock_savefig = mocker.patch("matplotlib.pyplot.savefig")
+
+        mocker.patch.object(sys, "argv", [
             "visualize_smer.py",
             "--model_path", str(empty_model_dir),
             "--title", "Test",
-        ]
+        ])
 
-        with patch.object(sys, "argv", test_args):
-            main()
+        main()
 
         mock_savefig.assert_not_called()
         assert any("No valid sample data found" in call.args[0] for call in mock_logger.call_args_list)
 
-    @patch("matplotlib.pyplot.show")
-    @patch("matplotlib.pyplot.savefig")
-    def test_y_axis_limits(self, mock_savefig, mock_show, model_dir):
+    def test_y_axis_limits(self, mocker, model_dir):
         """Verify the dynamic Y-axis logic doesn't crash."""
-        test_args = [
+        mock_savefig = mocker.patch("matplotlib.pyplot.savefig")
+        mocker.patch("matplotlib.pyplot.show")
+
+        mocker.patch.object(sys, "argv", [
             "visualize_smer.py",
             "--model_path", str(model_dir),
             "--title", "Test Dynamic Y",
-        ]
+        ])
 
-        with patch.object(sys, "argv", test_args):
-            main()
+        main()
 
         assert mock_savefig.called
