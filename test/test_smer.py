@@ -135,6 +135,27 @@ class TestSMER(unittest.TestCase):
         assert results[0]["index"] == 1
         assert results[1]["index"] == 3
 
+    @patch("src.smer.logger.warning")
+    def test_zip_strict_length_mismatch(self, mocked_warning):
+        """Tests that mismatched sequence lengths trigger ValueError and a warning."""
+        mismatched_data = {
+            "index": 42,
+            "ciphertext": "1 2 3",
+            "plaintext": "abc",
+            "predicted_plaintext": "ab",
+            "redundancy": 1.0
+        }
+
+        mapper = StrictMapper(model_path=str(self.test_dir))
+        result = mapper._process_entry(mismatched_data, line_idx=1)
+        assert result is None
+
+        mocked_warning.assert_called_once()
+        args, _ = mocked_warning.call_args
+        assert "Length mismatch" in args[0]
+        assert "ciphertext (3)" in args[0]
+        assert "predicted (2)" in args[0]
+
     def test_calculate_smer(self):
         mapper = StrictMapper(model_path=str(self.test_dir), threshold=0.95)
         mapper.calculate_smer()
