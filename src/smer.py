@@ -34,6 +34,7 @@ class StrictMapper:
                 try:
                     data = json.loads(line)
                 except json.JSONDecodeError:
+                    logger.warning(f"Line {i} contains invalid JSON and was skipped.")
                     continue
 
                 if "index" not in data:
