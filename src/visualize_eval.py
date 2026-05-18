@@ -40,6 +40,7 @@ def main() -> None:
     redundancies = []
     sers = []
 
+    # Parse primary data
     with open(eval_file, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -51,24 +52,49 @@ def main() -> None:
             if "type" in data and data["type"].startswith("summary"):
                 continue
 
-            length = len(data["plaintext"])
-            redundancy = data["redundancy"]
-            ser = data["ser"]
-
-            lengths.append(length)
-            redundancies.append(redundancy)
-            sers.append(ser)
+            lengths.append(len(data["plaintext"]))
+            redundancies.append(data["redundancy"])
+            sers.append(data["ser"])
 
     if not sers:
         logger.info("No valid sample data found in the evaluation file.")
         return
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+    # Check for Z408 results in evaluation_stats.json
+    stats_file = eval_file.with_name("evaluation_stats.json")
+    z408_data = None
+    if stats_file.exists():
+        with open(stats_file, encoding="utf-8") as sf:
+            stats_json = json.load(sf)
+            z408_data = stats_json.get("z408_result")
 
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
     fig.suptitle(args.title, fontsize=16, fontweight="bold", y=1.05)
 
     # Graph 1: SER vs Length
     ax1.scatter(lengths, sers, alpha=0.5, color="#1f77b4", edgecolors="none")
+
+    if z408_data:
+        z_len = len(z408_data["plaintext"])
+        z_ser = z408_data["ser"]
+        ax1.scatter(
+            [z_len],
+            [z_ser],
+            color="gold",
+            marker="*",
+            s=250,
+            edgecolors="black",
+            zorder=5,
+        )
+        ax1.annotate(
+            "Z408",
+            (z_len, z_ser),
+            textcoords="offset points",
+            xytext=(0, 10),
+            ha="center",
+            fontweight="bold",
+        )
+
     ax1.set_title("Symbol Error Rate (SER) vs Sequence Length")
     ax1.set_xlabel("Length (Characters)")
     ax1.set_ylabel("SER")
@@ -76,6 +102,28 @@ def main() -> None:
 
     # Graph 2: SER vs Redundancy
     ax2.scatter(redundancies, sers, alpha=0.5, color="#d62728", edgecolors="none")
+
+    if z408_data:
+        z_red = z408_data["redundancy"]
+        # Z408 already has z_ser defined above
+        ax2.scatter(
+            [z_red],
+            [z_ser],
+            color="gold",
+            marker="*",
+            s=250,
+            edgecolors="black",
+            zorder=5,
+        )
+        ax2.annotate(
+            "Z408",
+            (z_red, z_ser),
+            textcoords="offset points",
+            xytext=(0, 10),
+            ha="center",
+            fontweight="bold",
+        )
+
     ax2.set_title("Symbol Error Rate (SER) vs Redundancy")
     ax2.set_xlabel("Redundancy")
     ax2.set_ylabel("SER")
