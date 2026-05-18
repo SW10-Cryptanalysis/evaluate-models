@@ -72,6 +72,11 @@ fi
 echo "Launching vLLM evaluation engine..." | tee -a $LOG_FILE
 uv run python -m src.eval "${EVAL_ARGS[@]}" 2>&1 | tee -a $LOG_FILE
 
+# 5.1 Evaluate Z408 Cipher
+Z408_FILE_PATH="../Ciphers/z408.json"
+echo "Evaluating Z408 cipher..." | tee -a $LOG_FILE
+uv run python -m src.eval_z408 "${EVAL_ARGS[@]}" --z408_path "$Z408_FILE_PATH" 2>&1 | tee -a $LOG_FILE
+
 # 6. Visualization
 EVAL_FILE_PATH="$MODEL_PATH/evaluation_results.jsonl"
 echo "Generating evaluation graphs..." | tee -a $LOG_FILE
