@@ -41,6 +41,10 @@ def main() -> None:
     redundancies = []
     smers = []
 
+    z408_len = None
+    z408_redundancy = None
+    z408_smer = None
+
     with open(smer_file, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -52,9 +56,14 @@ def main() -> None:
             if "index" not in data:
                 continue
 
-            lengths.append(data["cipher_len"])
-            redundancies.append(data["redundancy"])
-            smers.append(data["smer"])
+            if data["index"] == "Z408":
+                z408_len = data["cipher_len"]
+                z408_redundancy = data["redundancy"]
+                z408_smer = data["smer"]
+            else:
+                lengths.append(data["cipher_len"])
+                redundancies.append(data["redundancy"])
+                smers.append(data["smer"])
 
     if not smers:
         logger.info("No valid sample data found in the SMER file.")
@@ -70,6 +79,21 @@ def main() -> None:
 
     # Graph 1: SMER vs Length
     ax1.scatter(lengths, smers, alpha=0.4, color="#1f77b4", edgecolors="none")
+    if z408_len is not None and z408_smer is not None:
+        ax1.scatter(
+            z408_len, z408_smer,
+            color="gold", marker="*", s=250,
+            edgecolors="black", zorder=5,
+            label="Z408",
+        )
+        ax1.annotate(
+            "Z408",
+            (z408_len, z408_smer),
+            textcoords="offset points",
+            xytext=(0, 10),
+            ha="center",
+            fontweight="bold",
+        )
     ax1.set_title("SMER vs Length")
     ax1.set_xlabel("Cipher Length (Symbols)")
     ax1.set_ylabel("SMER")
@@ -78,6 +102,21 @@ def main() -> None:
 
     # Graph 2: SMER vs Redundancy
     ax2.scatter(redundancies, smers, alpha=0.4, color="#d62728", edgecolors="none")
+    if z408_redundancy is not None and z408_smer is not None:
+        ax2.scatter(
+            z408_redundancy, z408_smer,
+            color="gold", marker="*", s=250,
+            edgecolors="black", zorder=5,
+            label="Z408",
+        )
+        ax2.annotate(
+            "Z408",
+            (z408_redundancy, z408_smer),
+            textcoords="offset points",
+            xytext=(0, 10),
+            ha="center",
+            fontweight="bold",
+        )
     ax2.set_title("SMER vs Redundancy")
     ax2.set_xlabel("Redundancy")
     ax2.set_ylabel("SMER")
