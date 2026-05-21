@@ -30,6 +30,11 @@ def main() -> None:
         required=True,
         help="Custom title for the generated graphs",
     )
+    parser.add_argument(
+        "--no-z408",
+        action="store_true",
+        help="Omit Z408 from plot",
+    )
     args = parser.parse_args()
 
     smer_file = Path(args.model_path) / "smer_results.jsonl"
@@ -79,7 +84,7 @@ def main() -> None:
 
     # Graph 1: SMER vs Length
     ax1.scatter(lengths, smers, alpha=0.4, color="#1f77b4", edgecolors="none")
-    if z408_len is not None and z408_smer is not None:
+    if not args.no_z408 and z408_len is not None and z408_smer is not None:
         ax1.scatter(
             z408_len, z408_smer,
             color="gold", marker="*", s=250,
@@ -102,7 +107,7 @@ def main() -> None:
 
     # Graph 2: SMER vs Redundancy
     ax2.scatter(redundancies, smers, alpha=0.4, color="#d62728", edgecolors="none")
-    if z408_redundancy is not None and z408_smer is not None:
+    if not args.no_z408 and z408_redundancy is not None and z408_smer is not None:
         ax2.scatter(
             z408_redundancy, z408_smer,
             color="gold", marker="*", s=250,
