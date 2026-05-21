@@ -39,6 +39,15 @@ def setup_test_dir(tmp_path, test_data):
             f.write(json.dumps(entry) + "\n")
         f.write(json.dumps({"type": "summary", "total": "ignore me"}))
 
+    stats_path = tmp_path / "evaluation_stats.json"
+    mock_stats = {
+        "dataset_name": "test_run",
+        "total_ciphers_processed": len(test_data),
+        "notes": "Mocked stats to support Z408 initialization validation passes."
+    }
+    with open(stats_path, "w", encoding="utf-8") as f:
+        json.dump(mock_stats, f)
+
     return tmp_path
 
 class TestStrictMapper:
@@ -76,8 +85,7 @@ class TestStrictMapper:
         mapper.results_path = missing_keys_path
         mapper.calculate_smer()
 
-        mocked_warning.assert_called_once()
-        assert "Missing keys: ['ciphertext']" in mocked_warning.call_args[0][0]
+        assert any("Missing keys: ['ciphertext']" in call[0][0] for call in mocked_warning.call_args_list)
 
         output_file = test_dir / "smer_results.jsonl"
         with open(output_file, encoding="utf-8") as f:

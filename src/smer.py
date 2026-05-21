@@ -37,6 +37,7 @@ class StrictMapper:
         self.model_path = Path(model_path)
         self.threshold = threshold
         self.results_path = self.model_path / "evaluation_results.jsonl"
+        self.stats_path = self.model_path / "evaluation_stats.json"
         self.output_path = self.model_path / "smer_results.jsonl"
 
     def calculate_smer(self) -> None:
@@ -65,6 +66,19 @@ class StrictMapper:
                 result = self._process_entry(data, i)
                 if result:
                     output_data.append(result)
+
+        with open(self.stats_path, encoding="utf-8") as f:
+            z408_raw = json.load(f)
+
+        z408_data = z408_raw.get("z408_result", z408_raw)
+
+        z408_result = self._process_entry(z408_data, line_idx=-1)
+        if z408_result:
+            z408_result["index"] = "Z408"
+            output_data.append(z408_result)
+            logger.info("Successfully calculated SMER for Z408 cipher.")
+        else:
+            logger.warning(f"Z408 separate file not found at: {self.stats_path}")
 
         with open(self.output_path, "w", encoding="utf-8") as f:
             for entry in output_data:
