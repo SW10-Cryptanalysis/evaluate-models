@@ -255,7 +255,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--spaces", action="store_true")
     parser.add_argument("--model_path", type=str, required=True)
-    parser.add_argument("test_set_dir", type=str, required=True)
+    parser.add_argument("test-set-dir", type=str, required=True)
     args = parser.parse_args()
 
     evaluator = VLLMCipherEvaluator(
