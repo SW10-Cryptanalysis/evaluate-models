@@ -22,10 +22,10 @@ logger.setLevel(logging.INFO)
 class VLLMCipherEvaluator:
     """Evaluator class that uses vLLM to assess cipher decryption performance across a test dataset."""
 
-    def __init__(self, model_path: str, use_spaces: bool) -> None:
+    def __init__(self, model_path: str, use_spaces: bool, test_set_dir: str) -> None:
         """Initialize the evaluator with model path and configuration."""
         self.model_path = model_path
-        self.config = EvalConfig.from_model_path(model_path, use_spaces)
+        self.config = EvalConfig.from_model_path(model_path, use_spaces, test_set_dir)
         self.config.use_spaces = use_spaces
 
         self.output_log_path = Path(self.model_path) / "evaluation_results.jsonl"
@@ -255,9 +255,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--spaces", action="store_true")
     parser.add_argument("--model_path", type=str, required=True)
+    parser.add_argument("test_set_dir", type=str, required=True)
     args = parser.parse_args()
 
-    evaluator = VLLMCipherEvaluator(model_path=args.model_path, use_spaces=args.spaces)
+    evaluator = VLLMCipherEvaluator(
+        model_path=args.model_path,
+        use_spaces=args.spaces,
+        test_set_dir=args.test_set_dir,
+    )
     evaluator.run()
 
 
