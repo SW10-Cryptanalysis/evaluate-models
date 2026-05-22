@@ -97,14 +97,19 @@ def _check_dataset_format(
     for i in range(n_probe):
         sample = dataset[i]["input_ids"]
         if sample[0] != config.bos_token_id:
+            errors.append(
+                f"Sample 0: expected bos_token_id={config.bos_token_id}, got {sample[0]}.",
+            )
             dataset_errors += 1
-            if dataset_errors == 1:
-                errors.append(
-                    f"Sample 0: expected bos_token_id={config.bos_token_id}, got {sample[0]}.",
-                )
         if sample[-1] != config.eos_token_id:
+            errors.append(
+                f"Sample {i}: expected eos_token_id={config.eos_token_id}, got {sample[-1]}.",
+            )
             dataset_errors += 1
         if sample.count(config.sep_token_id) != 1:
+            errors.append(
+                f"Sample {i}: expected exactly 1 sep_token_id={config.sep_token_id}, got {sample.count(config.sep_token_id)}.",
+            )
             dataset_errors += 1
 
     if dataset_errors > 0:
