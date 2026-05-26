@@ -5,10 +5,10 @@ set -e
 # 1. EVALUATION CONFIGURATION (Edit these for each model)
 # ==============================================================================
 # The path to your model (relative or absolute)
-TARGET_MODEL_DIR="../Models/Mistral/Mistral-4k-homophonic-nosp/"
+TARGET_MODEL_DIR="../Models/RWKV/RWKV-mono-10k-nosp/"
 
 # The title for the visualization graph
-EVAL_TITLE="Mistral 4k Homophonic No Spaces"
+EVAL_TITLE="RWKV-7 10k Monoalphabetic No Spaces"
 
 # Set to true if this model was trained with the space character inclusion
 USE_SPACES=false 
@@ -20,7 +20,7 @@ cd /work
 # 2. Clone the repository and specific branch if it doesn't exist yet
 if [ ! -d "evaluate-models" ]; then
     echo "Cloning repository..."
-    git clone -b UCloud https://github.com/SW10-Cryptanalysis/evaluate-models.git
+    git clone -b eval_rwkv https://github.com/SW10-Cryptanalysis/evaluate-models.git
 fi
 
 cd evaluate-models
