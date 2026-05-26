@@ -1,0 +1,266 @@
+import argparse
+import json
+import logging
+import time
+import torch
+import sys
+from pathlib import Path
+from tqdm import tqdm
+from datasets import load_from_disk
+from easy_logging import EasyFormatter
+
+from src.classes.config import EvalConfig
+from src import eval_utils
+from model import get_model  # Import your RWKV model
+
+handler = logging.StreamHandler()
+handler.setFormatter(EasyFormatter())
+logger = logging.getLogger(__name__)
+logger.addHandler(handler)
+logger.setLevel(logging.INFO)
+
+# L4/Ada Lovelace Optimizations
+torch.backends.cuda.matmul.fp32_precision = "tf32"
+
+
+class PyTorchCipherEvaluator:
+    """Evaluator class that uses native PyTorch to assess RWKV cipher decryption performance."""
+
+    def __init__(self, model_dir: str, use_spaces: bool) -> None:
+        """Initialize the evaluator with model path and configuration."""
+        self.model_dir = Path(model_dir)
+        self.config = EvalConfig.from_model_path(str(self.model_dir), use_spaces)
+        self.config.use_spaces = use_spaces
+
+        self.output_log_path = self.model_dir / "evaluation_results.jsonl"
+        self.stats_log_path = self.model_dir / "evaluation_stats.json"
+        self.dataset = load_from_disk(str(self.config.tokenized_dir / "Test"))
+        
+        # Build allowed token ID mask for generation
+        self.allowed_token_ids = eval_utils.build_allowed_token_ids(self.config)
+        self.skipped_count = 0
+
+        if not torch.cuda.is_available():
+            raise RuntimeError("Evaluation requires a CUDA device.")
+        self.device = torch.device("cuda:0")
+
+    def parse_samples(self) -> list[dict]:
+        """Extract prompt token IDs (up to SEP) and target lengths."""
+        parsed_data = []
+        self.skipped_count = 0
+        
+        for index, item in enumerate(self.dataset):
+            all_ids = item["input_ids"]
+            try:
+                sep_idx = all_ids.index(self.config.sep_token_id)
+                prompt_ids = all_ids[: sep_idx + 1]
+                raw_cipher_ids = all_ids[1:sep_idx]
+            except ValueError:
+                continue
+
+            target_length = len(raw_cipher_ids)
+            total_required_context = len(prompt_ids) + target_length
+
+            if total_required_context > self.config.max_context:
+                self.skipped_count += 1
+                continue
+
+            if target_length > 0:
+                parsed_data.append(
+                    {
+                        "index": index,
+                        "prompt_ids": prompt_ids,
+                        "raw_cipher_ids": raw_cipher_ids,
+                        "true_plain": item["raw_plaintext"],
+                        "redundancy": int(item["redundancy"]),
+                        "target_length": target_length,
+                    }
+                )
+        return parsed_data
+
+    @torch.no_grad()
+    def generate_greedy(self, model, prompt_ids: list[int], target_length: int, allowed_mask: torch.Tensor) -> list[int]:
+        """Autoregressively generates tokens using greedy decoding."""
+        current_ids = torch.tensor([prompt_ids], dtype=torch.long, device=self.device)
+        generated_ids = []
+
+        with torch.amp.autocast('cuda', dtype=torch.bfloat16):
+            for _ in range(target_length):
+                # Forward pass
+                logits = model(current_ids)
+                
+                # Get logits for the very last token in the sequence
+                next_token_logits = logits[0, -1, :]
+                
+                # Apply allowed tokens mask (sets illegal tokens to -inf)
+                next_token_logits += allowed_mask
+                
+                # Greedy selection
+                next_token = torch.argmax(next_token_logits, dim=-1)
+                
+                generated_ids.append(next_token.item())
+                
+                # Append predicted token to sequence for next iteration
+                current_ids = torch.cat([current_ids, next_token.unsqueeze(0).unsqueeze(0)], dim=-1)
+
+        return generated_ids
+
+    def run(self) -> list[dict]:
+        """Main method to execute the evaluation process."""
+        if not EvalConfig.tokenizer_dir.exists():
+            logger.error(f"Global tokenizer not found at {EvalConfig.tokenizer_dir}.")
+            sys.exit(1)
+
+        logger.info("Initializing Native PyTorch RWKV Model for Evaluation...")
+
+        # 1. Load Model
+        model = get_model().to(self.device)
+        checkpoint_path = self.model_dir / "rwkv7_cipher_final.pth"
+        
+        if not checkpoint_path.exists():
+            raise FileNotFoundError(f"Could not find model weights at {checkpoint_path}")
+            
+        state_dict = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
+        model.load_state_dict(state_dict)
+        model.eval()
+
+        # 2. Setup allowed tokens mask
+        vocab_size = self.config.vocab_size
+        allowed_mask = torch.full((vocab_size,), float('-inf'), device=self.device)
+        valid_ids = [t for t in self.allowed_token_ids if t < vocab_size]
+        allowed_mask[valid_ids] = 0.0
+
+        parsed_samples = self.parse_samples()
+        parsed_samples.sort(key=lambda x: x["target_length"], reverse=True)
+
+        logger.info(f"Launching sequential inference for {len(parsed_samples)} sequences...")
+        start_time = time.perf_counter()
+
+        outputs = []
+        # 3. Generate predictions
+        for sample in tqdm(parsed_samples, desc="Evaluating"):
+            pred_ids = self.generate_greedy(
+                model=model,
+                prompt_ids=sample["prompt_ids"],
+                target_length=sample["target_length"],
+                allowed_mask=allowed_mask
+            )
+            outputs.append(pred_ids)
+
+        generation_time = time.perf_counter() - start_time
+        logger.info(f"Inference complete in {generation_time:.2f} seconds.")
+
+        return self.process_outputs(parsed_samples, outputs, generation_time)
+
+    def process_outputs(
+        self,
+        parsed_samples: list[dict],
+        outputs: list[list[int]],
+        total_time: float,
+    ) -> list[dict]:
+        """Decode predictions, calculate SER, and aggregate results."""
+        all_results = []
+        total_ser = 0.0
+        total_wrong_spaces = 0
+        group_stats = {}
+
+        for sample, pred_ids in zip(parsed_samples, outputs, strict=False):
+            pred_plain = eval_utils.decode_prediction(pred_ids, self.config)
+            true_plain = sample["true_plain"]
+
+            ser, wrong_spaces = eval_utils.calculate_ser(true_plain, pred_plain)
+
+            result_dict = {
+                "index": sample["index"],
+                "redundancy": sample["redundancy"],
+                "ciphertext": eval_utils.decode_ciphertext(
+                    sample["raw_cipher_ids"], self.config
+                ),
+                "plaintext": true_plain,
+                "predicted_plaintext": pred_plain,
+                "ser": ser,
+                "wrong_spaces": wrong_spaces,
+            }
+            all_results.append(result_dict)
+            total_ser += ser
+            total_wrong_spaces += wrong_spaces
+
+            cipher_length = len(sample["raw_cipher_ids"])
+            bucket = eval_utils.closest_n(cipher_length)
+            key = (bucket, sample["redundancy"])
+            if key not in group_stats:
+                group_stats[key] = {"total_ser": 0.0, "wrong_spaces": 0, "count": 0}
+            group_stats[key]["total_ser"] += ser
+            group_stats[key]["wrong_spaces"] += wrong_spaces
+            group_stats[key]["count"] += 1
+
+        all_results.sort(key=lambda r: r["index"])
+
+        processed_count = len(all_results)
+        global_avg_ser = total_ser / processed_count if processed_count else 0.0
+        global_avg_wrong_spaces = (
+            total_wrong_spaces / processed_count if processed_count else 0
+        )
+
+        evaluation_stats = {"skipped_count": self.skipped_count, "group_logs": []}
+
+        with open(self.output_log_path, "w") as f:
+            for result in all_results:
+                f.write(json.dumps(result) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "type": "summary_global",
+                        "processed_count": processed_count,
+                        "global_avg_ser": round(global_avg_ser, 4),
+                        "global_avg_wrong_spaces": round(global_avg_wrong_spaces, 4),
+                        "total_inference_time": round(total_time, 2),
+                    }
+                )
+                + "\n"
+            )
+
+            for (n, redundancy), stats in sorted(group_stats.items()):
+                count = stats["count"]
+                avg = stats["total_ser"] / count
+                avg_wrong_spaces = stats["wrong_spaces"] / count
+
+                log_str = f"  N={n:>5}  μ={redundancy:>3}  count={count:>3}  avg_ser={avg:.4f}"
+                logger.info(log_str)
+                evaluation_stats["group_logs"].append(log_str)
+
+                f.write(
+                    json.dumps(
+                        {
+                            "type": "summary_group",
+                            "n": n,
+                            "redundancy": redundancy,
+                            "count": count,
+                            "avg_ser": round(avg, 4),
+                            "avg_wrong_spaces": round(avg_wrong_spaces, 4),
+                        }
+                    )
+                    + "\n"
+                )
+
+        logger.info(f"Results written to {self.output_log_path}")
+        with open(self.stats_log_path, "w") as sf:
+            json.dump(evaluation_stats, sf, indent=4)
+        logger.info(f"Stats written to {self.stats_log_path}")
+
+        return all_results
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--spaces", action="store_true")
+    # Point this to the DIRECTORY containing rwkv7_cipher_final.pth
+    parser.add_argument("--model_dir", type=str, required=True) 
+    args = parser.parse_args()
+
+    evaluator = PyTorchCipherEvaluator(model_dir=args.model_dir, use_spaces=args.spaces)
+    evaluator.run()
+
+
+if __name__ == "__main__":
+    main()
