@@ -69,7 +69,7 @@ if [ "$USE_SPACES" = true ]; then
 fi
 
 # 5. Execution
-echo "Launching vLLM evaluation engine..." | tee -a $LOG_FILE
+echo "Launching evaluation engine..." | tee -a $LOG_FILE
 uv run python -m src.eval "${EVAL_ARGS[@]}" 2>&1 | tee -a $LOG_FILE
 
 # 5.1 Evaluate Z408 Cipher

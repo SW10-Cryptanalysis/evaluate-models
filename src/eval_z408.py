@@ -1,18 +1,22 @@
 import argparse
 import json
 import logging
+import torch
 from pathlib import Path
-from vllm import LLM, SamplingParams  # type: ignore
 
 from src.classes.config import EvalConfig
 from src import eval_utils
+from model import get_model  # Import your custom RWKV model loader
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
+# L4 GPU Optimizations
+torch.backends.cuda.matmul.fp32_precision = "tf32"
+
 
 def main() -> None:
-    """Evaluate the Z408 cipher using a trained model and vLLM."""
+    """Evaluate the Z408 cipher using a trained RWKV-7 model natively in PyTorch."""
     parser = argparse.ArgumentParser(
         description="Evaluate the Z408 cipher using a trained model.",
     )
@@ -20,7 +24,7 @@ def main() -> None:
         "--model_path",
         type=str,
         required=True,
-        help="Path to the model directory",
+        help="Path to the model directory containing rwkv7_cipher_final.pth",
     )
     parser.add_argument(
         "--z408_path",
@@ -35,7 +39,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    model_dir = Path(args.model_path)
     config = EvalConfig.from_model_path(args.model_path, args.spaces)
+    
     if not EvalConfig.tokenizer_dir.exists():
         logger.error(f"Global tokenizer not found at {EvalConfig.tokenizer_dir}.")
         return
@@ -56,34 +62,55 @@ def main() -> None:
     prompt_ids = [config.bos_token_id] + cipher_ids + [config.sep_token_id]
     target_length = len(cipher_ids)
 
-    # Inference setup
-    llm = LLM(
-        model=args.model_path,
-        tokenizer=str(EvalConfig.tokenizer_dir),
-        max_model_len=config.max_context,
-        enforce_eager=False,
-        gpu_memory_utilization=0.90,
-    )
+    # --- NATIVE PYTORCH MODEL SETUP ---
+    if not torch.cuda.is_available():
+        logger.error("CUDA is required for evaluation.")
+        return
+    device = torch.device("cuda:0")
 
-    vocab_size = (
-        llm.get_tokenizer().vocab_size if llm.get_tokenizer() else config.vocab_size
-    )
+    logger.info("Loading Native RWKV-7 Model for Z408 Evaluation...")
+    model = get_model().to(device)
+    checkpoint_path = model_dir / "rwkv7_cipher_final.pth"
+    
+    if not checkpoint_path.exists():
+        logger.error(f"Could not find model weights at {checkpoint_path}")
+        return
+        
+    state_dict = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    model.load_state_dict(state_dict)
+    model.eval()
+
+    # --- ALLOWED TOKENS MASK ---
+    vocab_size = config.vocab_size
+    allowed_mask = torch.full((vocab_size,), float('-inf'), device=device)
     allowed_token_ids = eval_utils.build_allowed_token_ids(config)
     valid_allowed_ids = [t for t in allowed_token_ids if t < vocab_size]
+    allowed_mask[valid_allowed_ids] = 0.0
 
-    sp = SamplingParams(
-        temperature=0.0,
-        max_tokens=target_length,
-        min_tokens=target_length,
-        allowed_token_ids=valid_allowed_ids,
-        detokenize=False,
-    )
+    # --- AUTOREGRESSIVE GREEDY INFERENCE ---
+    logger.info(f"Running autoregressive generation for Z408 ({target_length} tokens)...")
+    current_ids = torch.tensor([prompt_ids], dtype=torch.long, device=device)
+    pred_ids = []
 
-    # Run inference
-    outputs = llm.generate([{"prompt_token_ids": prompt_ids}], sampling_params=[sp])
+    with torch.no_grad():
+        with torch.amp.autocast('cuda', dtype=torch.bfloat16):
+            for _ in range(target_length):
+                logits = model(current_ids)
+                
+                # Get logits for the absolute last token in the sequence
+                next_token_logits = logits[0, -1, :]
+                
+                # Filter out unallowed characters (force vocabulary constraints)
+                next_token_logits += allowed_mask
+                
+                # Greedy choice
+                next_token = torch.argmax(next_token_logits, dim=-1)
+                pred_ids.append(next_token.item())
+                
+                # Append to context for the next step loop
+                current_ids = torch.cat([current_ids, next_token.unsqueeze(0).unsqueeze(0)], dim=-1)
 
-    # Process outputs
-    pred_ids = list(outputs[0].outputs[0].token_ids)[:target_length]
+    # --- PROCESS OUTPUTS ---
     pred_plain = eval_utils.decode_prediction(pred_ids, config)
     compare_plain = true_plain[:target_length]
     ser, wrong_spaces = eval_utils.calculate_ser(compare_plain, pred_plain)
@@ -91,10 +118,7 @@ def main() -> None:
     # Create the result dictionary with matching keys
     z408_result_dict = {
         "index": "Z408",
-        "redundancy": z408_data.get(
-            "difficulty",
-            4,
-        ),  # Mapping difficulty to redundancy for plotting
+        "redundancy": z408_data.get("difficulty", 4),  # Mapping difficulty to redundancy
         "ciphertext": eval_utils.decode_ciphertext(cipher_ids, config),
         "plaintext": compare_plain,
         "predicted_plaintext": pred_plain,
@@ -102,11 +126,14 @@ def main() -> None:
         "wrong_spaces": wrong_spaces,
     }
 
-    # Inject into evaluation_stats.json
-    stats_path = Path(args.model_path) / "evaluation_stats.json"
+    # Inject results into evaluation_stats.json
+    stats_path = model_dir / "evaluation_stats.json"
     if stats_path.exists():
         with open(stats_path) as f:
-            stats_data = json.load(f)
+            try:
+                stats_data = json.load(f)
+            except json.JSONDecodeError:
+                stats_data = {}
     else:
         stats_data = {}
 
