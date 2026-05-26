@@ -4,7 +4,7 @@ set -e
 # ==============================================================================
 # 1. EVALUATION CONFIGURATION (Edit these for each model)
 # ==============================================================================
-# The path to your model (relative or absolute)
+# The path to your model directory containing rwkv7_cipher_final.pth
 TARGET_MODEL_DIR="../Models/RWKV/RWKV-mono-10k-nosp/"
 
 # The title for the visualization graph
@@ -39,7 +39,7 @@ NUM_GPUS=$(nvidia-smi --list-gpus | wc -l || echo 0)
 echo "Eval Job started on $(hostname) at $(date) with $NUM_GPUS GPU(s)" | tee -a $LOG_FILE
 echo "Resolved Model Path: $MODEL_PATH" | tee -a $LOG_FILE
 
-# 2. Environment Setup (uv & venv)
+# 3. Environment Setup (uv & venv)
 if ! command -v uv &> /dev/null; then
     curl -LsSf https://astral.sh/uv/install.sh | sh
     export PATH="$HOME/.cargo/bin:$PATH"
@@ -52,30 +52,25 @@ source .venv/bin/activate
 # Install dependencies
 uv pip install -e .
 
-# 3. Install pre-compiled FlashAttention-2 (CUDA 13.0 / PyTorch 2.10)
-echo "Installing Flash Attention 2 for B200..." | tee -a $LOG_FILE
-uv pip install https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.0/flash_attn-2.8.3+cu130torch2.10-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl
-
-# 4. vLLM Distributed Setup
+# 4. Hardware / Environment Setup
 export TOKENIZERS_PARALLELISM=false
-export VLLM_WORKER_MULTIPROC_METHOD=spawn
-export VLLM_USE_V1=0
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=0  # Target the first L4 GPU for native PyTorch evaluation
 
-# Build the argument array based on the configuration block
-EVAL_ARGS=("--model_path" "$MODEL_PATH")
+# Build the argument array based on our updated parameter names
+# Main test eval script expects '--model_dir', Z408 expects '--model_path'
+COMMON_ARGS=()
 if [ "$USE_SPACES" = true ]; then
-    EVAL_ARGS+=("--spaces")
+    COMMON_ARGS+=("--spaces")
 fi
 
-# 5. Execution
-echo "Launching evaluation engine..." | tee -a $LOG_FILE
-uv run python -m src.eval "${EVAL_ARGS[@]}" 2>&1 | tee -a $LOG_FILE
+# 5. Run Core Dataset Evaluation
+echo "Launching native PyTorch evaluation engine..." | tee -a $LOG_FILE
+uv run python -m src.eval --model_dir "$MODEL_PATH" "${COMMON_ARGS[@]}" 2>&1 | tee -a $LOG_FILE
 
 # 5.1 Evaluate Z408 Cipher
 Z408_FILE_PATH="../Ciphers/z408.json"
-echo "Evaluating Z408 cipher..." | tee -a $LOG_FILE
-uv run python -m src.eval_z408 "${EVAL_ARGS[@]}" --z408_path "$Z408_FILE_PATH" 2>&1 | tee -a $LOG_FILE
+echo "Evaluating Z408 cipher natively..." | tee -a $LOG_FILE
+uv run python -m src.eval_z408 --model_path "$MODEL_PATH" --z408_path "$Z408_FILE_PATH" "${COMMON_ARGS[@]}" 2>&1 | tee -a $LOG_FILE
 
 # 6. Visualization
 EVAL_FILE_PATH="$MODEL_PATH/evaluation_results.jsonl"
