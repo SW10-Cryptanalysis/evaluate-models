@@ -20,13 +20,12 @@ logger.setLevel(logging.INFO)
 
 
 class VLLMCipherEvaluator:
-    """Evaluator class that uses vLLM to assess cipher decryption performance across a test dataset."""
+    """Evaluator class that uses vLLM to assess cipher decryption performance via mapping predictions."""
 
-    def __init__(self, model_path: str, use_spaces: bool) -> None:
+    def __init__(self, model_path: str, use_spaces: bool, mapping: bool) -> None:
         """Initialize the evaluator with model path and configuration."""
         self.model_path = model_path
-        self.config = EvalConfig.from_model_path(model_path, use_spaces)
-        self.config.use_spaces = use_spaces
+        self.config = EvalConfig.from_model_path(model_path, use_spaces, mapping)
 
         self.output_log_path = Path(self.model_path) / "evaluation_results.jsonl"
         self.stats_log_path = Path(self.model_path) / "evaluation_stats.json"
@@ -35,26 +34,28 @@ class VLLMCipherEvaluator:
 
         self.skipped_count = 0
 
-        # Detect available L4 GPUs for Tensor Parallelism
         self.world_size = torch.cuda.device_count()
         if self.world_size == 0:
             raise RuntimeError("vLLM requires CUDA devices, but none were found.")
 
     def parse_samples(self) -> list[dict]:
-        """Extract prompt token IDs (up to SEP) and target lengths."""
+        """Extract prompt token IDs and target lengths based on the evaluation mode."""
         parsed_data = []
         self.skipped_count = 0
         for index, item in enumerate(self.dataset):
-            all_ids = item["input_ids"]
+            all_ids = item["input_ids"] # type: ignore
             try:
                 sep_idx = all_ids.index(self.config.sep_token_id)
-                # Model receives up to and including [SEP] to trigger Mapping Logic
                 prompt_ids = all_ids[: sep_idx + 1]
                 raw_cipher_ids = all_ids[1:sep_idx]
             except ValueError:
                 continue
 
-            target_length = len(raw_cipher_ids)
+            if self.config.mapping:
+                target_length = len(set(raw_cipher_ids))
+            else:
+                target_length = len(raw_cipher_ids)
+
             total_required_context = len(prompt_ids) + target_length
 
             if total_required_context > self.config.max_context:
@@ -67,16 +68,25 @@ class VLLMCipherEvaluator:
                         "index": index,
                         "prompt_ids": prompt_ids,
                         "raw_cipher_ids": raw_cipher_ids,
-                        "true_plain": item["raw_plaintext"],
-                        "redundancy": int(item["redundancy"]),
+                        "true_plain": item["raw_plaintext"], # type: ignore
+                        "redundancy": int(item["redundancy"]), # type: ignore
                         "target_length": target_length,
                     },
                 )
         return parsed_data
 
+    def derive_plaintext(self, raw_cipher_ids: list[int], pred_ids: list[int]) -> str:
+        """Derives the plaintext by constructing a key from the predicted mapping and applying it to the ciphertext."""
+        unique_cipher_ids = sorted(list(set(raw_cipher_ids)))
+
+        mapping_key = dict(zip(unique_cipher_ids, pred_ids, strict=False))
+
+        decrypted_ids = [mapping_key.get(cid, cid) for cid in raw_cipher_ids]
+
+        return eval_utils.decode_prediction(decrypted_ids, self.config)
+
     def run(self) -> list[dict]:
-        """Main method to execute the evaluation process: initializes vLLM, runs inference, and processes outputs."""
-        # 1. Sanity Check: Ensure the global tokenizer exists before booting vLLM
+        """Main method to execute the evaluation process initializing vLLM, running inference, and processing outputs."""
         if not EvalConfig.tokenizer_dir.exists():
             logger.error(f"Global tokenizer not found at {EvalConfig.tokenizer_dir}.")
             logger.error(
@@ -86,7 +96,6 @@ class VLLMCipherEvaluator:
 
         logger.info(f"Initializing vLLM across {self.world_size} GPUs...")
 
-        # 2. Point vLLM's `tokenizer` argument to our global directory
         llm = LLM(
             model=self.model_path,
             tokenizer=str(EvalConfig.tokenizer_dir),
@@ -106,7 +115,7 @@ class VLLMCipherEvaluator:
 
         eval_utils.run_preflight_checks(
             self.config,
-            self.dataset,
+            self.dataset,  # type: ignore
             self.allowed_token_ids,
             self.output_log_path,
             vocab_size,
@@ -144,61 +153,47 @@ class VLLMCipherEvaluator:
 
         return self.process_outputs(parsed_samples, outputs, generation_time)
 
-    def process_outputs(
-        self,
-        parsed_samples: list[dict],
-        outputs: list[RequestOutput],
-        total_time: float,
-    ) -> list[dict]:
-        """Decode predictions, calculate SER, and aggregate results with statistical bucketing."""
-        all_results = []
-        total_ser = 0.0
-        total_wrong_spaces = 0
-        group_stats = {}
-
-        for sample, output in zip(parsed_samples, outputs, strict=False):
-            pred_ids = list(output.outputs[0].token_ids)[: sample["target_length"]]
+    def _process_entry(self, sample: dict, output: RequestOutput) -> dict:
+        """Parse data and calculates SMER for a individual line entry."""
+        pred_ids = list(output.outputs[0].token_ids)[: sample["target_length"]]
+        if self.config.mapping:
+            pred_plain = self.derive_plaintext(sample["raw_cipher_ids"], pred_ids)
+        else:
             pred_plain = eval_utils.decode_prediction(pred_ids, self.config)
-            true_plain = sample["true_plain"]
+        true_plain = sample["true_plain"]
 
-            ser, wrong_spaces = eval_utils.calculate_ser(true_plain, pred_plain)
+        ser, wrong_spaces = eval_utils.calculate_ser(true_plain, pred_plain)
 
-            result_dict = {
-                "index": sample["index"],
-                "redundancy": sample["redundancy"],
-                "ciphertext": eval_utils.decode_ciphertext(
-                    sample["raw_cipher_ids"],
-                    self.config,
-                ),
-                "plaintext": true_plain,
-                "predicted_plaintext": pred_plain,
-                "ser": ser,
-                "wrong_spaces": wrong_spaces,
-            }
-            all_results.append(result_dict)
-            total_ser += ser
-            total_wrong_spaces += wrong_spaces
+        return {
+            "index": sample["index"],
+            "redundancy": sample["redundancy"],
+            "ciphertext": eval_utils.decode_ciphertext(
+                sample["raw_cipher_ids"],
+                self.config,
+            ),
+            "plaintext": true_plain,
+            "predicted_plaintext": pred_plain,
+            "ser": ser,
+            "wrong_spaces": wrong_spaces,
+        }
 
-            cipher_length = len(sample["raw_cipher_ids"])
-            bucket = eval_utils.closest_n(cipher_length)
-            key = (bucket, sample["redundancy"])
-            if key not in group_stats:
-                group_stats[key] = {"total_ser": 0.0, "wrong_spaces": 0, "count": 0}
-            group_stats[key]["total_ser"] += ser
-            group_stats[key]["wrong_spaces"] += wrong_spaces
-            group_stats[key]["count"] += 1
-
-        all_results.sort(key=lambda r: r["index"])
+    def _write_log(
+        self,
+        all_results: list[dict],
+        evaluation_stats: dict,
+        group_stats: dict,
+        total_stats: dict,
+    ) -> None:
+        """Write results to output log file."""
+        total_ser = total_stats["total_ser"]
+        total_wrong_spaces = total_stats["wrong_spaces"]
+        total_time = total_stats["total_time"]
 
         processed_count = len(all_results)
         global_avg_ser = total_ser / processed_count if processed_count else 0.0
         global_avg_wrong_spaces = (
             total_wrong_spaces / processed_count if processed_count else 0
         )
-
-        # Dictionary to hold data for evaluation_stats.json
-        evaluation_stats = {"skipped_count": self.skipped_count, "group_logs": []}
-
         with open(self.output_log_path, "w") as f:
             for result in all_results:
                 f.write(json.dumps(result) + "\n")
@@ -220,11 +215,9 @@ class VLLMCipherEvaluator:
                 avg = stats["total_ser"] / count
                 avg_wrong_spaces = stats["wrong_spaces"] / count
 
-                # Format the log string
                 log_str = f"  N={n:>5}  μ={redundancy:>3}  count={count:>3}  avg_ser={avg:.4f}"
                 logger.info(log_str)
 
-                # Append to our stats JSON payload
                 evaluation_stats["group_logs"].append(log_str)
 
                 f.write(
@@ -241,6 +234,44 @@ class VLLMCipherEvaluator:
                     + "\n",
                 )
 
+    def process_outputs(
+        self,
+        parsed_samples: list[dict],
+        outputs: list[RequestOutput],
+        total_time: float,
+    ) -> list[dict]:
+        """Decode predicted keys, apply to ciphertexts, calculate SER, and aggregate results with statistical bucketing."""
+        all_results = []
+        total_ser = 0.0
+        total_wrong_spaces = 0
+        group_stats = {}
+
+        for sample, output in zip(parsed_samples, outputs, strict=False):
+            result_dict = self._process_entry(sample, output)
+            all_results.append(result_dict)
+            total_ser += result_dict["ser"]
+            total_wrong_spaces += result_dict["wrong_spaces"]
+
+            cipher_length = len(sample["raw_cipher_ids"])
+            bucket = eval_utils.closest_n(cipher_length)
+            key = (bucket, sample["redundancy"])
+            if key not in group_stats:
+                group_stats[key] = {"total_ser": 0.0, "wrong_spaces": 0, "count": 0}
+            group_stats[key]["total_ser"] += result_dict["ser"]
+            group_stats[key]["wrong_spaces"] += result_dict["wrong_spaces"]
+            group_stats[key]["count"] += 1
+
+        all_results.sort(key=lambda r: r["index"])
+
+        evaluation_stats = {"skipped_count": self.skipped_count, "group_logs": []}
+
+        total_stats = {
+            "total_ser": total_ser,
+            "wrong_spaces": total_wrong_spaces,
+            "total_time": total_time,
+        }
+
+        self._write_log(all_results, evaluation_stats, group_stats, total_stats)
         logger.info(f"Results written to {self.output_log_path}")
 
         with open(self.stats_log_path, "w") as sf:
@@ -251,13 +282,18 @@ class VLLMCipherEvaluator:
 
 
 def main() -> None:
-    """Entry point for the evaluation script. Parses command-line arguments and initiates the evaluation process."""
+    """Entry point for the evaluation script."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--spaces", action="store_true")
+    parser.add_argument("--mapping", action="store_true")
     parser.add_argument("--model_path", type=str, required=True)
     args = parser.parse_args()
 
-    evaluator = VLLMCipherEvaluator(model_path=args.model_path, use_spaces=args.spaces)
+    evaluator = VLLMCipherEvaluator(
+        model_path=args.model_path,
+        use_spaces=args.spaces,
+        mapping=args.mapping,
+    )
     evaluator.run()
 
 
