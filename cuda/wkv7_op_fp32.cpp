@@ -1,6 +1,6 @@
 #include <torch/extension.h>
 #include <cuda_bf16.h>
-using bf = __nv_bfloat16;
+using bf = float;
 
 void cuda_forward(int B, int T, int H, bf*w, bf*q, bf*k, bf*v, bf*z, bf*a, bf*y, float*s, float*sa);
 
