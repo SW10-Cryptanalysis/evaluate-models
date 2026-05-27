@@ -1,10 +1,34 @@
 import math
+import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from types import SimpleNamespace
 from torch.utils.checkpoint import checkpoint
-from src.config import cfg
+from pathlib import Path
+from torch.utils.cpp_extension import load
+from config import cfg
+
+# --- DYNAMIC CUDA KERNEL COMPILATION FOR EVALUATION ---
+# Resolve the path to the directory containing your 'cuda/' folder
+# Assuming 'cuda/' is at the root of your evaluate-models workspace:
+BASE_DIR = Path(__file__).parent.parent
+
+# Check if the kernel needs to be dynamically loaded into torch.ops
+if not hasattr(torch.ops, "wind_backstepping"):
+    print("Compiling RWKV-7 WindBackstepping CUDA Kernels for evaluation...")
+    
+    # Define paths relative to your script
+    cuda_src = str(BASE_DIR / 'cuda' / 'wkv7_cuda_fp32.cu')
+    cpp_src = str(BASE_DIR / 'cuda' / 'wkv7_op_fp32.cpp')
+    
+    load(
+        name="wind_backstepping", 
+        sources=[cuda_src, cpp_src], 
+        is_python_module=False, 
+        extra_cuda_cflags=cfg.cuda_flags
+    )
+    print("CUDA Kernels compiled and loaded successfully.")
 
 # --- TORCH JIT DEFINITIONS ---
 MyModule = torch.jit.ScriptModule
