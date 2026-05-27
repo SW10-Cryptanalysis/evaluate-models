@@ -65,7 +65,7 @@ fi
 
 # 5. Run Core Dataset Evaluation
 echo "Launching native PyTorch evaluation engine..." | tee -a $LOG_FILE
-uv run python -m src.eval --model_dir "$MODEL_PATH" "${COMMON_ARGS[@]}" 2>&1 | tee -a $LOG_FILE
+uv run python -m src.eval_rwkv --model_dir "$MODEL_PATH" "${COMMON_ARGS[@]}" 2>&1 | tee -a $LOG_FILE
 
 # 5.1 Evaluate Z408 Cipher
 Z408_FILE_PATH="../Ciphers/z408.json"
