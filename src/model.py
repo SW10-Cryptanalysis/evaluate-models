@@ -14,6 +14,8 @@ from config import cfg
 # Assuming 'cuda/' is at the root of your evaluate-models workspace:
 BASE_DIR = Path(__file__).parent.parent
 
+wind_backstepping_module = None
+
 # Check if the kernel needs to be dynamically loaded into torch.ops
 if not hasattr(torch.ops, "wind_backstepping"):
     print("Compiling RWKV-7 WindBackstepping CUDA Kernels for evaluation...")
@@ -22,7 +24,7 @@ if not hasattr(torch.ops, "wind_backstepping"):
     cuda_src = str(BASE_DIR / 'cuda' / 'wkv7_cuda_fp32.cu')
     cpp_src = str(BASE_DIR / 'cuda' / 'wkv7_op_fp32.cpp')
     
-    load(
+    wind_backstepping_module = load(
         name="wind_backstepping", 
         sources=[cuda_src, cpp_src], 
         is_python_module=False, 
