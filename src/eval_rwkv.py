@@ -55,48 +55,67 @@ class PyTorchCipherEvaluator:
         self.device = torch.device("cuda:0")
 
     def parse_samples(self) -> list[dict]:
-        """Diagnostic override to see what's actually inside the loaded rows."""
-        print("\n" + "="*50)
-        print("DIAGNOSTIC: DATASET LOADED SUCCESSFULLY")
-        print(f"Total rows found on disk: {len(self.dataset)}")
+        """Ultimate fallback parser with enforced stderr logging."""
+        logger.info("="*50)
+        logger.info(f"DIAGNOSTIC: DATASET LOADED! Total rows: {len(self.dataset)}")
         
-        if len(self.dataset) > 0:
-            first_row = self.dataset[0]
-            print(f"Available column keys: {list(first_row.keys())}")
-            for key, val in first_row.items():
-                print(f"Column '{key}' sample type: {type(val)}")
-                if isinstance(val, list):
-                    print(f"  -> List length: {len(val)}")
-                    print(f"  -> First 5 elements: {val[:5]}")
-                else:
-                    print(f"  -> Value snippet: {str(val)[:100]}")
-        print("="*50 + "\n")
-        
-        # Original parsing logic follows below
+        if len(self.dataset) == 0:
+            logger.error("DATASET IS COMPLETELY EMPTY! 0 ROWS LOADED.")
+            return []
+
+        first_row = self.dataset[0]
+        logger.info(f"Available columns in data: {list(first_row.keys())}")
+
+        # 1. Dynamically find the column containing our tokens
+        id_col = None
+        for col in ["input_ids", "tokens", "ids", "text"]:
+            if col in first_row:
+                id_col = col
+                break
+
+        if not id_col:
+            logger.error(f"Could not find any token ID column! Found: {list(first_row.keys())}")
+            return []
+
+        logger.info(f"Using column '{id_col}' for token arrays.")
+
         parsed_data = []
         for index, item in enumerate(self.dataset):
-            all_ids = item.get("input_ids", [])
-            # If the data uses strings, let's fall back gracefully to avoid skipping
-            if not all_ids or not isinstance(all_ids, list):
+            all_ids = item[id_col]
+
+            # Catch edge cases where tokens are saved as tensors or numpy arrays
+            if hasattr(all_ids, "tolist"):
+                all_ids = all_ids.tolist()
+
+            if not isinstance(all_ids, list) or len(all_ids) == 0:
                 continue
                 
-            try:
-                # Fallback to finding index safely or use a default if missing
-                sep_idx = all_ids.index(self.config.sep_token_id) if self.config.sep_token_id in all_ids else len(all_ids)//2
-                prompt_ids = all_ids[: sep_idx + 1]
-                raw_cipher_ids = all_ids[1:sep_idx]
+            # 2. Find the separator or force a fallback so we NEVER return 0 sequences
+            sep_token = self.config.sep_token_id
+            if sep_token in all_ids:
+                sep_idx = all_ids.index(sep_token)
+            else:
+                if index == 0:
+                    logger.warning(f"Sep token ID {sep_token} NOT FOUND! Falling back to 50% split.")
+                sep_idx = len(all_ids) // 2
                 
-                parsed_data.append({
-                    "index": index,
-                    "prompt_ids": prompt_ids,
-                    "raw_cipher_ids": raw_cipher_ids,
-                    "true_plain": item.get("raw_plaintext", "UNKNOWN"),
-                    "redundancy": int(item.get("redundancy", 0)),
-                    "target_length": len(raw_cipher_ids),
-                })
-            except Exception as e:
-                continue
-                
+            prompt_ids = all_ids[: sep_idx + 1]
+            raw_cipher_ids = all_ids[1:sep_idx]
+            
+            # Dynamically grab the plaintext regardless of what the column is named
+            true_plain = item.get("raw_plaintext", item.get("plaintext", "UNKNOWN"))
+            
+            parsed_data.append({
+                "index": index,
+                "prompt_ids": prompt_ids,
+                "raw_cipher_ids": raw_cipher_ids,
+                "true_plain": true_plain,
+                "redundancy": int(item.get("redundancy", 0)),
+                "target_length": len(raw_cipher_ids),
+            })
+
+        logger.info(f"Successfully parsed {len(parsed_data)} sequences for evaluation.")
+        logger.info("="*50)
         return parsed_data
 
     @torch.no_grad()
