@@ -77,7 +77,7 @@ class VLLMCipherEvaluator:
 
     def derive_plaintext(self, raw_cipher_ids: list[int], pred_ids: list[int]) -> str:
         """Derives the plaintext by constructing a key from the predicted mapping and applying it to the ciphertext."""
-        unique_cipher_ids = sorted(list(set(raw_cipher_ids)))
+        unique_cipher_ids = sorted(set(raw_cipher_ids))
 
         mapping_key = dict(zip(unique_cipher_ids, pred_ids, strict=False))
 

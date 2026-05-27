@@ -198,7 +198,6 @@ def test_write_log(mocker, base_evaluator):
     handle = mock_open()
     assert handle.write.call_count == 3
 
-    # Test zero division handling
     mock_open.reset_mock()
     base_evaluator._write_log([], evaluation_stats, {}, total_stats)
     assert mock_open().write.call_count == 1
