@@ -50,6 +50,6 @@ class EvalConfig:
             pad_token_id=mc["pad_token_id"],
             bos_token_id=mc["bos_token_id"],
             eos_token_id=mc["eos_token_id"],
-            max_context=mc["max_position_embeddings"],
+            max_context=999999,
             use_spaces=use_spaces,
         )
