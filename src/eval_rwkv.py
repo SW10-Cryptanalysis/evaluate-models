@@ -34,7 +34,17 @@ class PyTorchCipherEvaluator:
 
         self.output_log_path = self.model_dir / "evaluation_results.jsonl"
         self.stats_log_path = self.model_dir / "evaluation_stats.json"
-        self.dataset = load_from_disk(str(self.config.tokenized_dir))
+        # Load the raw dataset structure from disk
+        raw_dataset = load_from_disk(str(self.config.tokenized_dir))
+        
+        # Unpack it if it's wrapped in a DatasetDict container
+        from datasets import DatasetDict
+        if isinstance(raw_dataset, DatasetDict):
+            # Grab the first available split dynamically (e.g., "Validation")
+            first_split = list(raw_dataset.keys())[0]
+            self.dataset = raw_dataset[first_split]
+        else:
+            self.dataset = raw_dataset
         
         # Build allowed token ID mask for generation
         self.allowed_token_ids = eval_utils.build_allowed_token_ids(self.config)
