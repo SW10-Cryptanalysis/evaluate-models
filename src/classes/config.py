@@ -36,9 +36,8 @@ class EvalConfig:
 
     @property
     def tokenized_dir(self) -> Path:
-        """Dynamic path based on whether we use spaces or not."""
-        suffix = "spaced" if self.use_spaces else "normal"
-        return DATA_DIR / f"tokenized_{suffix}"  # type: ignore
+        """Point directly to our persistent validation dataset folder."""
+        return Path("/work/Ciphers/tokenized_normal_monoalphabetic/Validation")
 
     @classmethod
     def from_model_path(cls, model_path: str | Path, use_spaces: bool) -> "EvalConfig":

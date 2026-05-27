@@ -34,7 +34,7 @@ class PyTorchCipherEvaluator:
 
         self.output_log_path = self.model_dir / "evaluation_results.jsonl"
         self.stats_log_path = self.model_dir / "evaluation_stats.json"
-        self.dataset = load_from_disk(str(self.config.tokenized_dir / "Validation"))
+        self.dataset = load_from_disk(str(self.config.tokenized_dir))
         
         # Build allowed token ID mask for generation
         self.allowed_token_ids = eval_utils.build_allowed_token_ids(self.config)
