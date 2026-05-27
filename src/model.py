@@ -14,23 +14,20 @@ from config import cfg
 # Assuming 'cuda/' is at the root of your evaluate-models workspace:
 BASE_DIR = Path(__file__).parent.parent
 
-wind_backstepping_module = None
+# --- NATIVE JIT CUDA KERNEL COMPILATION FOR EVALUATION ---
+BASE_DIR = Path(__file__).parent.parent
 
-# Check if the kernel needs to be dynamically loaded into torch.ops
-if not hasattr(torch.ops, "wind_backstepping"):
-    print("Compiling RWKV-7 WindBackstepping CUDA Kernels for evaluation...")
-    
-    # Define paths relative to your script
-    cuda_src = str(BASE_DIR / 'cuda' / 'wkv7_cuda_fp32.cu')
-    cpp_src = str(BASE_DIR / 'cuda' / 'wkv7_op_fp32.cpp')
-    
-    wind_backstepping_module = load(
-        name="wind_backstepping", 
-        sources=[cuda_src, cpp_src], 
-        is_python_module=False, 
-        extra_cuda_cflags=cfg.cuda_flags
-    )
-    print("CUDA Kernels compiled and loaded successfully.")
+print("Loading/Compiling RWKV-7 WindBackstepping CUDA Kernels...")
+cuda_src = str(BASE_DIR / 'cuda' / 'wkv7_cuda_fp32.cu')
+cpp_src = str(BASE_DIR / 'cuda' / 'wkv7_op_fp32.cpp')
+
+# Force-load on every execution process to guarantee global namespace mapping
+load(
+    name="wind_backstepping", 
+    sources=[cuda_src, cpp_src], 
+    is_python_module=False, 
+    extra_cuda_cflags=cfg.cuda_flags
+)
 
 # --- TORCH JIT DEFINITIONS ---
 MyModule = torch.jit.ScriptModule
