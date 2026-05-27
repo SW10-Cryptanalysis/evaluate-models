@@ -89,26 +89,36 @@ def main() -> None:
 
     # --- AUTOREGRESSIVE GREEDY INFERENCE ---
     logger.info(f"Running autoregressive generation for Z408 ({target_length} tokens)...")
-    current_ids = torch.tensor([prompt_ids], dtype=torch.long, device=device)
+    current_ids = [prompt_ids]
     pred_ids = []
+    chunk_len = 16  # Your model's kernel chunk requirement
 
     with torch.no_grad():
         with torch.amp.autocast('cuda', dtype=torch.bfloat16):
             for _ in range(target_length):
-                logits = model(current_ids)
+                # 1. Determine how much padding we need to satisfy the CUDA kernel
+                actual_len = len(current_ids[0])
+                pad_amt = (chunk_len - (actual_len % chunk_len)) % chunk_len
                 
-                # Get logits for the absolute last token in the sequence
-                next_token_logits = logits[0, -1, :]
+                # 2. Build a padded tensor block
+                padded_list = current_ids[0] + [config.pad_token_id] * pad_amt
+                input_tensor = torch.tensor([padded_list], dtype=torch.long, device=device)
                 
-                # Filter out unallowed characters (force vocabulary constraints)
+                # 3. Forward pass through your custom architecture
+                logits = model(input_tensor)
+                
+                # 4. CRITICAL: Extract logits from the actual_len - 1 index (ignoring our padding)
+                next_token_logits = logits[0, actual_len - 1, :]
+                
+                # Filter out unauthorized characters
                 next_token_logits += allowed_mask
                 
                 # Greedy choice
-                next_token = torch.argmax(next_token_logits, dim=-1)
-                pred_ids.append(next_token.item())
+                next_token = torch.argmax(next_token_logits, dim=-1).item()
+                pred_ids.append(next_token)
                 
-                # Append to context for the next step loop
-                current_ids = torch.cat([current_ids, next_token.unsqueeze(0).unsqueeze(0)], dim=-1)
+                # Append to actual context tracking list (unpadded)
+                current_ids[0].append(next_token)
 
     # --- PROCESS OUTPUTS ---
     pred_plain = eval_utils.decode_prediction(pred_ids, config)
