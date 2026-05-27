@@ -13,6 +13,7 @@ def dummy_config():
         eos_token_id=2,
         max_context=4096,
         use_spaces=True,
+        mapping=False,
     )
 
 
@@ -76,7 +77,7 @@ class TestConfigFromModelPath:
         }
         config_file.write_text(json.dumps(valid_json))
 
-        config = EvalConfig.from_model_path(model_path, use_spaces=False)
+        config = EvalConfig.from_model_path(model_path, use_spaces=False, mapping=True)
         assert isinstance(config, EvalConfig)
         assert isinstance(config.vocab_size, int)
 
@@ -85,7 +86,7 @@ class TestConfigFromModelPath:
         model_path.mkdir()
 
         with pytest.raises(FileNotFoundError):
-            EvalConfig.from_model_path(model_path, use_spaces=True)
+            EvalConfig.from_model_path(model_path, use_spaces=True, mapping=False)
 
     def test_from_model_path_invalid_json_fails(self, tmp_path):
         model_path = tmp_path / "corrupt_model"
@@ -94,7 +95,7 @@ class TestConfigFromModelPath:
         config_file.write_text("{ this is not valid json }")
 
         with pytest.raises(json.JSONDecodeError):
-            EvalConfig.from_model_path(model_path, use_spaces=True)
+            EvalConfig.from_model_path(model_path, use_spaces=True, mapping=False)
 
     def test_from_model_path_missing_key_fails(self, tmp_path):
         model_path = tmp_path / "bad_keys_model"
@@ -103,4 +104,4 @@ class TestConfigFromModelPath:
         config_file.write_text(json.dumps({"wrong_key": 999}))
 
         with pytest.raises(KeyError):
-            EvalConfig.from_model_path(model_path, use_spaces=True)
+            EvalConfig.from_model_path(model_path, use_spaces=True, mapping=False)

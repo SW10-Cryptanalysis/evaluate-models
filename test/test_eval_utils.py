@@ -14,6 +14,7 @@ def mock_config():
         eos_token_id=6,
         max_context=4096,
         use_spaces=True,
+        mapping=False,
     )
 
 
