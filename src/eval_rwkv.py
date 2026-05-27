@@ -208,6 +208,14 @@ class PyTorchCipherEvaluator:
             pred_plain = eval_utils.decode_prediction(pred_ids, self.config)
             true_plain = sample["true_plain"]
 
+            if len(pred_plain) != len(true_plain):
+                if len(pred_plain) < len(true_plain):
+                    # Pad with a dummy space character if the prediction is too short
+                    pred_plain = pred_plain.ljust(len(true_plain), " ")
+                else:
+                    # Truncate the prediction if it generated extra characters
+                    pred_plain = pred_plain[:len(true_plain)]
+
             ser, wrong_spaces = eval_utils.calculate_ser(true_plain, pred_plain)
 
             result_dict = {
