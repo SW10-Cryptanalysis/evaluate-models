@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from types import SimpleNamespace
 from torch.utils.checkpoint import checkpoint
-from config import cfg
+from src.config import cfg
 
 # --- TORCH JIT DEFINITIONS ---
 MyModule = torch.jit.ScriptModule
