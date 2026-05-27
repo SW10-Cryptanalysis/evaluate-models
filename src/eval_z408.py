@@ -33,9 +33,14 @@ def main() -> None:
         action="store_true",
         help="Use spaces in evaluation",
     )
+    parser.add_argument(
+        "--mapping",
+        action="store_true",
+        help="Use mapping in evaluation",
+    )
     args = parser.parse_args()
 
-    config = EvalConfig.from_model_path(args.model_path, args.spaces)
+    config = EvalConfig.from_model_path(args.model_path, args.spaces, args.mapping)
     if not EvalConfig.tokenizer_dir.exists():
         logger.error(f"Global tokenizer not found at {EvalConfig.tokenizer_dir}.")
         return
