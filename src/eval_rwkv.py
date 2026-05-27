@@ -56,6 +56,9 @@ class PyTorchCipherEvaluator:
                 prompt_ids = all_ids[: sep_idx + 1]
                 raw_cipher_ids = all_ids[1:sep_idx]
             except ValueError:
+                if index == 0:
+                    print(f"\n[DEBUG] Looking for SEP Token ID: {self.config.sep_token_id}")
+                    print(f"[DEBUG] Actual content of first row input_ids: {all_ids[:60]}")
                 continue
 
             target_length = len(raw_cipher_ids)
