@@ -140,7 +140,7 @@ class Config:
 
     def __post_init__(self):
         # Ensure directory exists
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        #self.output_dir.mkdir(parents=True, exist_ok=True)
         
         # Add head/chunk definitions to flags dynamically
         self.cuda_flags += [f'-D_C_={self.head_size}', f'-D_CHUNK_LEN_={self.chunk_len}']

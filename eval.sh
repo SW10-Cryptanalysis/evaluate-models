@@ -5,7 +5,7 @@ set -e
 # 1. EVALUATION CONFIGURATION (Edit these for each model)
 # ==============================================================================
 # The path to your model directory containing rwkv7_cipher_final.pth
-TARGET_MODEL_DIR="../Models/RWKV/RWKV-mono-10k-nosp/"
+TARGET_MODEL_DIR="/work/Models/RWKV/RWKV-mono-10k-nosp/"
 
 # The title for the visualization graph
 EVAL_TITLE="RWKV-7 10k Monoalphabetic No Spaces"
