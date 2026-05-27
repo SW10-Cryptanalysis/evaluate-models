@@ -161,8 +161,19 @@ class PyTorchCipherEvaluator:
             raise FileNotFoundError(f"Could not find model weights at {checkpoint_path}")
             
         state_dict = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
-        model.load_state_dict(state_dict)
+        
+        # Capture a raw weight value out of the file before loading
+        sample_key = list(state_dict.keys())[0]
+        file_weight_sample = state_dict[sample_key].detach().cpu().float().mean().item()
+        
+        # Load the weights into the model architecture
+        # We switch strict=True to FORCE PyTorch to crash and show us the exact naming conflict
+        model.load_state_dict(state_dict, strict=True)
         model.eval()
+
+        # Check if the weight actually stuck inside the active layer
+        model_weight_sample = dict(model.named_parameters())[sample_key].detach().cpu().float().mean().item()
+        logger.info(f"[WEIGHT CHECK] File mean: {file_weight_sample:.6f} | Model mean: {model_weight_sample:.6f}")
 
         # 2. Setup allowed tokens mask
         vocab_size = self.config.vocab_size
