@@ -4,7 +4,6 @@ import torch.nn as nn
 from transformers import Mamba2Config, Mamba2Model
 from transformers.modeling_outputs import SequenceClassifierOutput
 from typing import Any
-from src.classes.mamba_config import MambaConfig
 
 
 
@@ -138,23 +137,3 @@ class Mamba2ForMapping(nn.Module):
             logits=final_logits,  # type: ignore
             hidden_states=outputs.hidden_states,
         )
-
-
-def get_mapping_model(config: MambaConfig) -> Mamba2ForMapping:
-    """Initialize a Mamba2 Mapping model with parameters defined in the config.
-
-    Args:
-        config (MambaConfig): The Mamba2 configuration object.
-
-    Returns:
-        Mamba2ForMapping: The initialized Mamba2 Mapping model.
-
-    """
-    m_dict = asdict(config)
-
-    mamba2_config = Mamba2Config(**m_dict)
-    mamba2_config.torch_dtype = torch.bfloat16
-
-    model = Mamba2ForMapping(mamba2_config, num_labels=26)
-
-    return model
