@@ -107,19 +107,31 @@ class PyTorchCipherEvaluator:
 
     @torch.no_grad()
     def generate_greedy(self, model, prompt_ids: list[int], target_length: int, allowed_mask: torch.Tensor) -> list[int]:
-        """Autoregressively generates tokens using greedy decoding."""
+        """Autoregressively generates tokens using greedy decoding with dynamic chunk padding."""
         current_ids = torch.tensor([prompt_ids], dtype=torch.long, device=self.device)
         generated_ids = []
 
         with torch.amp.autocast('cuda', dtype=torch.bfloat16):
             for _ in range(target_length):
-                # Forward pass
-                logits = model(current_ids)
+                seq_len = current_ids.size(1)
+                rem = seq_len % 16
                 
-                # Get logits for the very last token in the sequence
-                next_token_logits = logits[0, -1, :]
+                # 1. Right-pad the sequence to a multiple of 16 for the CUDA kernel
+                if rem != 0:
+                    pad_len = 16 - rem
+                    pad_tensor = torch.full((1, pad_len), self.config.pad_token_id, dtype=torch.long, device=self.device)
+                    forward_ids = torch.cat([current_ids, pad_tensor], dim=1)
+                else:
+                    forward_ids = current_ids
                 
-                # Apply allowed tokens mask (sets illegal tokens to -inf)
+                # 2. Forward pass with the padded tensor
+                logits = model(forward_ids)
+                
+                # 3. Get logits for the exact position of the last REAL token
+                # (Ignoring the dummy predictions made for the padding tokens)
+                next_token_logits = logits[0, seq_len - 1, :]
+                
+                # Apply allowed tokens mask
                 next_token_logits += allowed_mask
                 
                 # Greedy selection
@@ -127,7 +139,7 @@ class PyTorchCipherEvaluator:
                 
                 generated_ids.append(next_token.item())
                 
-                # Append predicted token to sequence for next iteration
+                # Append the generated token to our TRUE unpadded sequence for the next loop
                 current_ids = torch.cat([current_ids, next_token.unsqueeze(0).unsqueeze(0)], dim=-1)
 
         return generated_ids
