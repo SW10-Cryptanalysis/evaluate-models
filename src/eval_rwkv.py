@@ -34,13 +34,13 @@ class PyTorchCipherEvaluator:
 
         self.output_log_path = self.model_dir / "evaluation_results.jsonl"
         self.stats_log_path = self.model_dir / "evaluation_stats.json"
+        
         # Load the raw dataset structure from disk
         raw_dataset = load_from_disk(str(self.config.tokenized_dir))
         
         # Unpack it if it's wrapped in a DatasetDict container
         from datasets import DatasetDict
         if isinstance(raw_dataset, DatasetDict):
-            # Grab the first available split dynamically (e.g., "Validation")
             first_split = list(raw_dataset.keys())[0]
             self.dataset = raw_dataset[first_split]
         else:
@@ -54,7 +54,7 @@ class PyTorchCipherEvaluator:
             raise RuntimeError("Evaluation requires a CUDA device.")
         self.device = torch.device("cuda:0")
 
-        # FIX: Called with 0 positional arguments as required by your definition
+        # Load the model via your zero-argument utility
         logger.info("Loading RWKV-7 Model via get_model()...")
         self.model = get_model()
         self.model.eval()
@@ -85,12 +85,7 @@ class PyTorchCipherEvaluator:
                 continue
 
             # 2. Mathematical sequence mapping:
-            # Index 0: BOS
-            # Index 1 to target_length: Ciphertext
-            # Index 1 + target_length: SEP Token
             sep_idx = 1 + target_length
-            
-            # Safeguard against out-of-bounds
             if sep_idx >= len(all_ids):
                 continue
                 
@@ -103,51 +98,12 @@ class PyTorchCipherEvaluator:
                 "raw_cipher_ids": raw_cipher_ids,
                 "true_plain": true_plain,
                 "redundancy": int(item.get("redundancy", 0)),
-                "target_length": target_length, # This is now guaranteed to be > 0!
+                "target_length": target_length,
             })
             
         logger.info(f"Successfully loaded {len(parsed_data)} valid sequence prompts.")
         logger.info("="*50)
         return parsed_data
-
-    @torch.no_grad()
-    def generate_greedy(self, model, prompt_ids: list[int], target_length: int, allowed_mask: torch.Tensor) -> list[int]:
-        """Autoregressively generates tokens using greedy decoding with dynamic chunk padding."""
-        current_ids = torch.tensor([prompt_ids], dtype=torch.long, device=self.device)
-        generated_ids = []
-
-        with torch.amp.autocast('cuda', dtype=torch.bfloat16):
-            for _ in range(target_length):
-                seq_len = current_ids.size(1)
-                rem = seq_len % 16
-                
-                # 1. Right-pad the sequence to a multiple of 16 for the CUDA kernel
-                if rem != 0:
-                    pad_len = 16 - rem
-                    pad_tensor = torch.full((1, pad_len), self.config.pad_token_id, dtype=torch.long, device=self.device)
-                    forward_ids = torch.cat([current_ids, pad_tensor], dim=1)
-                else:
-                    forward_ids = current_ids
-                
-                # 2. Forward pass with the padded tensor
-                logits = model(forward_ids)
-                
-                # 3. Get logits for the exact position of the last REAL token
-                # (Ignoring the dummy predictions made for the padding tokens)
-                next_token_logits = logits[0, seq_len - 1, :]
-                
-                # Apply allowed tokens mask
-                next_token_logits += allowed_mask
-                
-                # Greedy selection
-                next_token = torch.argmax(next_token_logits, dim=-1)
-                
-                generated_ids.append(next_token.item())
-                
-                # Append the generated token to our TRUE unpadded sequence for the next loop
-                current_ids = torch.cat([current_ids, next_token.unsqueeze(0).unsqueeze(0)], dim=-1)
-
-        return generated_ids
 
     def run(self):
         """Runs lightning-fast parallel teacher-forced evaluation across the dataset."""
@@ -159,13 +115,11 @@ class PyTorchCipherEvaluator:
         for token_id in self.allowed_token_ids:
             allowed_mask[token_id] = 0.0
 
-        results = []
+        outputs = []
         start_time = time.time()
 
         # Wrap in progress bar
         for idx, sample in enumerate(tqdm(parsed_samples, desc="Evaluating")):
-            # Get the complete raw token list containing [BOS + Cipher + SEP + Plaintext]
-            # using the raw item from your dataset array
             item = self.dataset[sample["index"]]
             all_ids = item.get("input_ids", item.get("tokens", []))
             if hasattr(all_ids, "tolist"):
@@ -189,8 +143,6 @@ class PyTorchCipherEvaluator:
                     logits = self.model(inputs)
 
             # 3. Extract the parallel predictions for the plaintext tokens
-            # The model predicts the first plain character at the index of the SEP token
-            # Calculate where the SEP token sits based on geometry
             sep_idx = 1 + target_length 
             
             pred_ids = []
@@ -199,31 +151,18 @@ class PyTorchCipherEvaluator:
                 if pos >= logits.size(1):
                     break
                 
-                # Apply token constraints if necessary
+                # Apply token constraints
                 token_logits = logits[0, pos, :] + allowed_mask
                 pred_token = torch.argmax(token_logits).item()
                 pred_ids.append(pred_token)
 
-            # FIX: Use your project's built-in evaluation decoder to avoid "vocab_map unknown" error
-            pred_plain = eval_utils.decode_prediction(pred_ids, self.config)
-            true_plain = sample["true_plain"]
-
-            # Calculate metrics for this row
-            ser, _ = eval_utils.calculate_ser(true_plain, pred_plain)
-            
-            results.append({
-                "index": sample["index"],
-                "true_plain": true_plain,
-                "pred_plain": pred_plain,
-                "ser": ser,
-                "redundancy": sample["redundancy"]
-            })
+            # Save the raw predicted token list to pass onward
+            outputs.append(pred_ids)
 
         generation_time = time.time() - start_time
         logger.info(f"Parallel evaluation complete in {generation_time:.2f} seconds!")
         
-        # Convert your structural results data directly to token format for the statistics recorder
-        outputs = [[self.config.pad_token_id] for _ in results]  # structural placeholder matching your original signature
+        # Pass the extracted outputs directly to the statistics recorder
         return self.process_outputs(parsed_samples, outputs, generation_time)
 
     def process_outputs(
@@ -244,10 +183,8 @@ class PyTorchCipherEvaluator:
 
             if len(pred_plain) != len(true_plain):
                 if len(pred_plain) < len(true_plain):
-                    # Pad with a dummy space character if the prediction is too short
                     pred_plain = pred_plain.ljust(len(true_plain), " ")
                 else:
-                    # Truncate the prediction if it generated extra characters
                     pred_plain = pred_plain[:len(true_plain)]
 
             ser, wrong_spaces = eval_utils.calculate_ser(true_plain, pred_plain)
@@ -336,7 +273,6 @@ class PyTorchCipherEvaluator:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--spaces", action="store_true")
-    # Point this to the DIRECTORY containing rwkv7_cipher_final.pth
     parser.add_argument("--model_dir", type=str, required=True) 
     args = parser.parse_args()
 
