@@ -55,55 +55,42 @@ class PyTorchCipherEvaluator:
         self.device = torch.device("cuda:0")
 
     def parse_samples(self) -> list[dict]:
-        """Ultimate fallback parser with enforced stderr logging."""
+        """Geometry-based override that completely ignores token IDs to prevent 0-length loops."""
         logger.info("="*50)
-        logger.info(f"DIAGNOSTIC: DATASET LOADED! Total rows: {len(self.dataset)}")
+        logger.info(f"DATASET GEOMETRY OVERRIDE INITIATED. Total rows: {len(self.dataset)}")
         
-        if len(self.dataset) == 0:
-            logger.error("DATASET IS COMPLETELY EMPTY! 0 ROWS LOADED.")
-            return []
-
-        first_row = self.dataset[0]
-        logger.info(f"Available columns in data: {list(first_row.keys())}")
-
-        # 1. Dynamically find the column containing our tokens
-        id_col = None
-        for col in ["input_ids", "tokens", "ids", "text"]:
-            if col in first_row:
-                id_col = col
-                break
-
-        if not id_col:
-            logger.error(f"Could not find any token ID column! Found: {list(first_row.keys())}")
-            return []
-
-        logger.info(f"Using column '{id_col}' for token arrays.")
-
         parsed_data = []
         for index, item in enumerate(self.dataset):
-            all_ids = item[id_col]
-
-            # Catch edge cases where tokens are saved as tensors or numpy arrays
+            all_ids = item.get("input_ids", item.get("tokens", item.get("ids", [])))
             if hasattr(all_ids, "tolist"):
                 all_ids = all_ids.tolist()
 
             if not isinstance(all_ids, list) or len(all_ids) == 0:
                 continue
-                
-            # 2. Find the separator or force a fallback so we NEVER return 0 sequences
-            sep_token = self.config.sep_token_id
-            if sep_token in all_ids:
-                sep_idx = all_ids.index(sep_token)
-            else:
-                if index == 0:
-                    logger.warning(f"Sep token ID {sep_token} NOT FOUND! Falling back to 50% split.")
-                sep_idx = len(all_ids) // 2
+
+            # 1. Strip left-padding so the array perfectly starts with BOS
+            pad_id = self.config.pad_token_id
+            while len(all_ids) > 0 and all_ids[0] == pad_id:
+                all_ids.pop(0)
+
+            true_plain = item.get("raw_plaintext", item.get("plaintext", ""))
+            target_length = len(true_plain)
+            
+            if target_length == 0:
+                continue
+
+            # 2. Mathematical sequence mapping:
+            # Index 0: BOS
+            # Index 1 to target_length: Ciphertext
+            # Index 1 + target_length: SEP Token
+            sep_idx = 1 + target_length
+            
+            # Safeguard against out-of-bounds
+            if sep_idx >= len(all_ids):
+                continue
                 
             prompt_ids = all_ids[: sep_idx + 1]
             raw_cipher_ids = all_ids[1:sep_idx]
-            
-            # Dynamically grab the plaintext regardless of what the column is named
-            true_plain = item.get("raw_plaintext", item.get("plaintext", "UNKNOWN"))
             
             parsed_data.append({
                 "index": index,
@@ -111,10 +98,10 @@ class PyTorchCipherEvaluator:
                 "raw_cipher_ids": raw_cipher_ids,
                 "true_plain": true_plain,
                 "redundancy": int(item.get("redundancy", 0)),
-                "target_length": len(raw_cipher_ids),
+                "target_length": target_length, # This is now guaranteed to be > 0!
             })
-
-        logger.info(f"Successfully parsed {len(parsed_data)} sequences for evaluation.")
+            
+        logger.info(f"Successfully loaded {len(parsed_data)} valid sequence prompts.")
         logger.info("="*50)
         return parsed_data
 
