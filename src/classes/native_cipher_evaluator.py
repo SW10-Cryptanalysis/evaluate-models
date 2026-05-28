@@ -29,7 +29,10 @@ class NativeMappingEvaluator(BaseCipherEvaluator):
         logger.info("Initializing Native PyTorch Mapping Model...")
 
         from models.mamba_mapping import Mamba2ForMapping
+
         mamba_config = Mamba2Config.from_pretrained(self.model_path)
+
+        mamba_config.time_step_limit = (0.0, float("inf"))
 
         model = Mamba2ForMapping(mamba_config, num_labels=26)
         weights_path = Path(self.model_path) / "model.safetensors"
