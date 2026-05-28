@@ -131,6 +131,7 @@ class BaseCipherEvaluator:
             "total_time": total_time,
         }
 
+        logger.info(f"Writing {len(all_results)} results to {self.output_log_path}")
         self._write_log(all_results, evaluation_stats, group_stats, total_stats)
         logger.info(f"Results written to {self.output_log_path}")
 
@@ -148,5 +149,60 @@ class BaseCipherEvaluator:
         group_stats: dict,
         total_stats: dict,
     ) -> None:
-        """Write JSONL and JSON stat files to disk. Include your existing logic here."""
-        pass
+        """Write results to output log file.
+
+        Args:
+            all_results (list[dict]): List of results to write to the log file.
+            evaluation_stats (dict): Statistics for the entire evaluation.
+            group_stats (dict): Statistics for each group of ciphers.
+            total_stats (dict): Statistics for the entire evaluation.
+
+        """
+        total_ser = total_stats["total_ser"]
+        total_wrong_spaces = total_stats["wrong_spaces"]
+        total_time = total_stats["total_time"]
+
+        processed_count = len(all_results)
+        global_avg_ser = total_ser / processed_count if processed_count else 0.0
+        global_avg_wrong_spaces = (
+            total_wrong_spaces / processed_count if processed_count else 0
+        )
+        with open(self.output_log_path, "w") as f:
+            for result in all_results:
+                f.write(json.dumps(result) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "type": "summary_global",
+                        "processed_count": processed_count,
+                        "global_avg_ser": round(global_avg_ser, 4),
+                        "global_avg_wrong_spaces": round(global_avg_wrong_spaces, 4),
+                        "total_inference_time": round(total_time, 2),
+                    },
+                )
+                + "\n",
+            )
+
+            for (n, redundancy), stats in sorted(group_stats.items()):
+                count = stats["count"]
+                avg = stats["total_ser"] / count
+                avg_wrong_spaces = stats["wrong_spaces"] / count
+
+                log_str = f"  N={n:>5}  μ={redundancy:>3}  count={count:>3}  avg_ser={avg:.4f}"
+                logger.info(log_str)
+
+                evaluation_stats["group_logs"].append(log_str)
+
+                f.write(
+                    json.dumps(
+                        {
+                            "type": "summary_group",
+                            "n": n,
+                            "redundancy": redundancy,
+                            "count": count,
+                            "avg_ser": round(avg, 4),
+                            "avg_wrong_spaces": round(avg_wrong_spaces, 4),
+                        },
+                    )
+                    + "\n",
+                )
