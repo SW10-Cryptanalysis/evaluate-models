@@ -1,3 +1,4 @@
+import argparse  # Added to handle CLI arguments smoothly
 import json
 import logging
 from collections import defaultdict
@@ -18,9 +19,8 @@ class ResultsAggregator:
     """Recursively processes model evaluation metrics and generates clustered summaries."""
 
     def __init__(
-        self, 
-        base_dir: str | Path = "outputs", 
-        target_lengths: List[int] = None
+        self,
+        base_dir: str | Path = "outputs",
     ) -> None:
         """
         Initializes the aggregator with configuration rules.
@@ -31,9 +31,7 @@ class ResultsAggregator:
         self.base_dir = Path(base_dir)
         
         # Fallback to default experimental baselines if none are supplied
-        self.target_lengths = target_lengths or [
-            350, 400, 450, 600, 800, 1000, 2000, 4000, 6000, 8000, 10000
-        ]
+        self.target_lengths = [350, 400, 450, 600, 800, 1000, 2000, 4000, 6000, 8000, 10000]
         self.target_filename = "evaluation_results.jsonl"
         self.output_filename = "accum_results.jsonl"
 
@@ -43,14 +41,13 @@ class ResultsAggregator:
 
     def process_evaluation_file(self, file_path: Path) -> None:
         """Reads a specific evaluation log file, bins values, and writes a local summary."""
-        # Group data array buckets dynamically: {(binned_length, redundancy): [sers...]}
         data_groups: Dict[Tuple[int, int], List[float]] = defaultdict(list)
 
         logger.info(f"Processing: {file_path}")
 
         try:
             with open(file_path, "r", encoding="utf-8") as f:
-                for line_num, line in enumerate(f, 1):
+                for _, line in enumerate(f, 1):
                     if not line.strip():
                         continue
                     try:
@@ -58,12 +55,11 @@ class ResultsAggregator:
                         
                         redundancy = record.get("redundancy")
                         ser = record.get("ser")
-                        plaintext = record.get("plaintext", "")
+                        plaintext = record.get("plaintext")
                         
-                        if redundancy is None or ser is None or not plaintext:
+                        if redundancy is None or ser is None or plaintext is None:
                             continue
                             
-                        # Calculate string text scale via character metrics
                         actual_length = len(plaintext)
                         binned_length = self.find_nearest_baseline(actual_length)
                         
@@ -105,16 +101,16 @@ class ResultsAggregator:
     def run(self) -> None:
         """Executes the complete recursive discovery and aggregation engine pipeline."""
         if not self.base_dir.exists() or not self.base_dir.is_dir():
-            logger.error(f"Target base outputs directory not found at: {self.base_dir.resolve()}")
+            logger.error(f"Target base directory not found at: {self.base_dir.resolve()}")
             return
 
         eval_files = list(self.base_dir.rglob(self.target_filename))
 
         if not eval_files:
-            logger.info(f"No files matching '{self.target_filename}' found.")
+            logger.info(f"No files matching '{self.target_filename}' found inside {self.base_dir.resolve()}")
             return
 
-        logger.info(f"Discovered {len(eval_files)} files. Commencing pipeline processing...")
+        logger.info(f"Discovered {len(eval_files)} files in '{self.base_dir}'. Commencing pipeline processing...")
         for eval_file in eval_files:
             self.process_evaluation_file(eval_file)
             
@@ -122,6 +118,19 @@ class ResultsAggregator:
 
 
 if __name__ == "__main__":
-    # Instantiate and trigger the system using standard parameters
-    aggregator = ResultsAggregator(base_dir="outputs")
+    # Set up CLI Argument Parser
+    parser = argparse.ArgumentParser(
+        description="Recursively aggregates evaluation results into summary JSONL files."
+    )
+    
+    parser.add_argument(
+        "--models-dir", 
+        required=True, 
+        help="The target base directory to search for models (Required)"
+    )
+    
+    args = parser.parse_args()
+
+    # Pass the user's terminal input folder directly into the class
+    aggregator = ResultsAggregator(base_dir=args.models_dir)
     aggregator.run()

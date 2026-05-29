@@ -1,8 +1,10 @@
+import argparse
 import json
 import logging
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Tuple, List
+import numpy as np
 from easy_logging import EasyFormatter
 
 # Set up logger
@@ -13,12 +15,12 @@ logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
 
-class LaTeXTableGenerator:
+class TableGenerator:
     """Discovers compiled evaluation logs and formats them into a clean LaTeX landscape table."""
 
-    def __init__(self, base_dir: str | Path = "outputs") -> None:
+    def __init__(self, base_dir: str) -> None:
         self.base_dir = Path(base_dir)
-        self.output_tex_path = self.base_dir / "landscape_results_table.tex"
+        self.output_tex_path = self.base_dir / "results-table.tex"
         
         # Explicit column ordering for the X-Axis table layout
         self.target_lengths = [350, 400, 450, 600, 800, 1000, 2000, 4000, 6000, 8000, 10000]
@@ -30,7 +32,6 @@ class LaTeXTableGenerator:
         Parses all found accum_results.jsonl profiles.
         Returns a nested structure: matrix[model_name][(length, redundancy)] = "mean / median / best"
         """
-        # Master mapping data structure
         matrix = defaultdict(dict)
         target_file = "accum_results.jsonl"
         
@@ -53,14 +54,22 @@ class LaTeXTableGenerator:
                         
                         length = record.get("cipher_length")
                         redundancy = record.get("redundancy")
-                        mean_ser = record.get("mean_ser", 1.0)
-                        median_ser = record.get("median_ser", 1.0)
-                        best_ser = record.get("best_case_ser", 1.0)
+                        mean_ser = record.get("mean_ser")
+                        median_ser = record.get("median_ser")
+                        best_ser = record.get("best_case_ser")
                         
-                        if length is None or redundancy is None:
+                        if (
+                            length is None or redundancy is None or 
+                            mean_ser is None or median_ser is None or 
+                            best_ser is None
+                        ):
+                            logger.warning(
+                                f"Skipping incomplete record in {file_path.name} "
+                                f"(Missing values: L={length}, R={redundancy}, "
+                                f"Mean={mean_ser}, Med={median_ser}, Best={best_ser})"
+                            )
                             continue
-                            
-                        # Build formatted cell string matches
+
                         cell_value = f"{mean_ser:.2f} / {median_ser:.2f} / {best_ser:.2f}"
                         matrix[model_label][(int(length), int(redundancy))] = cell_value
                         
@@ -72,17 +81,20 @@ class LaTeXTableGenerator:
     def generate_tex_string(self, matrix: Dict[str, Dict[Tuple[int, int], str]]) -> str:
         """Assembles the final text components into a valid, compile-ready LaTeX document fragment."""
         if not matrix:
+            logger.error(f"Unable to generate LaTeX string: No matrix data was resolved from '{self.base_dir}'.")
             return ""
 
         # Generate Header Dynamic Length Alignments
         col_headers = " & ".join([f"\\textbf{{{l}}}" for l in self.target_lengths])
         
-        # Build document block skeleton wrapper
+        # Total redundancies to span vertically with multirow
+        num_redundancies = len(self.target_redundancies)
+        
         tex = []
         tex.append(r"\begin{sidewaystable}[p] % Automatically rotates the entire page 90 degrees counterclockwise")
         tex.append(r"\centering")
         tex.append(r"\caption{Comprehensive Summary of Symbol Error Rate (SER) Metrics across Lengths and Redundancies}")
-        tex.append(r"\label{tab:landscape_ser_metrics}")
+        tex.append(r"\label{tab:results-table}")
         tex.append(r"\setlength{\tabcolsep}{3pt}")
         tex.append(r"\resizebox{\textheight}{!}{% Scales the table perfectly to fit the landscape page height")
         tex.append(r"\begin{tabular}{ll ccccccccccc}") # 11 text coordinate values
@@ -93,7 +105,7 @@ class LaTeXTableGenerator:
         tex.append(r"\midrule")
 
         # Alphabetically sort the detected models to keep things predictable
-        for model_idx, model_name in enumerate(sorted(matrix.keys())):
+        for model_name in sorted(matrix.keys()):
             tex.append(f"\n% --- {model_name.upper()} ---")
             
             # Escape strings like underscores safely for LaTeX rendering stability
@@ -104,15 +116,14 @@ class LaTeXTableGenerator:
                 row_cells = []
                 
                 for length in self.target_lengths:
-                    # Pull values from the matrix, defaulting to an empty/dash placeholder if missing
-                    val = matrix[model_name].get((length, redundancy), "---")
+                    val = matrix[model_name].get((length, redundancy), "")
                     row_cells.append(val)
                 
                 row_data_str = " & ".join(row_cells)
                 
-                # Use \multirow on the first row of a model group block
+                # Dynamic multirow row-spanning size matching the length of your redundancies array (12)
                 if row_idx == 0:
-                    prefix = f"\\multirow{{7}}{{*}}{{{escaped_model_name}}}"
+                    prefix = f"\\multirow{{{num_redundancies}}}{{*}}{{{escaped_model_name}}}"
                 else:
                     prefix = ""
                     
@@ -120,7 +131,6 @@ class LaTeXTableGenerator:
             
             tex.append(r"\midrule")
             
-        # Clean double midrules from trailing pop blocks
         if tex[-1] == r"\midrule":
             tex.pop()
 
@@ -142,7 +152,7 @@ class LaTeXTableGenerator:
 
         matrix_data = self.read_accum_data()
         if not matrix_data:
-            logger.warning("No data matrix resolved. Aborting code generation output.")
+            logger.error("No data matrix resolved. Aborting code generation output.")
             return
 
         tex_content = self.generate_tex_string(matrix_data)
@@ -156,5 +166,20 @@ class LaTeXTableGenerator:
 
 
 if __name__ == "__main__":
-    generator = LaTeXTableGenerator(base_dir="outputs")
+    # Set up CLI Argument Parser
+    parser = argparse.ArgumentParser(
+        description="Scans a target directory for summary outputs and outputs a compiled LaTeX sideways results table."
+    )
+    
+    # Strictly required named flag configuration with no default value
+    parser.add_argument(
+        "--models-dir", 
+        required=True, 
+        help="The target base directory to search for models."
+    )
+    
+    args = parser.parse_args()
+
+    # Pass the mandatory path argument straight into the generator class
+    generator = TableGenerator(base_dir=args.models_dir)
     generator.run()
