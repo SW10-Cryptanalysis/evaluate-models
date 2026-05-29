@@ -53,7 +53,9 @@ class NativeMappingEvaluator(BaseCipherEvaluator):
                 outputs = model(input_ids=input_tensor)
                 logits = outputs.logits
 
-                pred_ids = torch.argmax(logits, dim=-1).squeeze(0).tolist()
+                pred_classes = torch.argmax(logits, dim=-1).squeeze(0).tolist()
+
+                pred_ids = [self.allowed_token_ids[cls_idx] for cls_idx in pred_classes]
 
                 target_len = sample["target_length"]
                 clean_outputs.append(pred_ids[:target_len])
