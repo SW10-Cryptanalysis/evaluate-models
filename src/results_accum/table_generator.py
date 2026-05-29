@@ -79,68 +79,116 @@ class TableGenerator:
         return matrix
 
     def generate_tex_string(self, matrix: Dict[str, Dict[Tuple[int, int], str]]) -> str:
-        """Assembles the final text components into a valid, compile-ready LaTeX document fragment."""
+        """
+        Assembles data into a portrait multi-page table utilizing longtable.
+        Groups Lengths vertically with multirow, automatically filtering out 
+        rows where all models contain empty ('---') data.
+        
+        Optimized with \scriptsize and tight \tabcolsep padding to prevent
+        horizontal page margin overflow.
+        """
         if not matrix:
             logger.error(f"Unable to generate LaTeX string: No matrix data was resolved from '{self.base_dir}'.")
             return ""
 
-        # Generate Header Dynamic Length Alignments
-        col_headers = " & ".join([f"\\textbf{{{l}}}" for l in self.target_lengths])
+        # Alphabetically sort the architectures to act as our columns
+        sorted_models = sorted(matrix.keys())
+        num_models = len(sorted_models)
         
-        # Total redundancies to span vertically with multirow
-        num_redundancies = len(self.target_redundancies)
+        # Format the top horizontal header text
+        escaped_models = [m.replace("_", r"\_") for m in sorted_models]
+        model_headers = " & ".join([f"\\textbf{{{m}}}" for m in escaped_models])
         
-        tex = []
-        tex.append(r"\begin{sidewaystable}[p] % Automatically rotates the entire page 90 degrees counterclockwise")
-        tex.append(r"\centering")
-        tex.append(r"\caption{Comprehensive Summary of Symbol Error Rate (SER) Metrics across Lengths and Redundancies}")
-        tex.append(r"\label{tab:results-table}")
-        tex.append(r"\setlength{\tabcolsep}{3pt}")
-        tex.append(r"\resizebox{\textheight}{!}{% Scales the table perfectly to fit the landscape page height")
-        tex.append(r"\begin{tabular}{ll ccccccccccc}") # 11 text coordinate values
-        tex.append(r"\toprule")
-        tex.append(r"\multirow{2}{*}{\textbf{Architecture}} & \multirow{2}{*}{\textbf{Redundancy}} & \multicolumn{11}{c}{\textbf{Cipher Length ($N$)}} \\")
-        tex.append(r"\cmidrule(lr){3-13}")
-        tex.append(f"& & {col_headers} \\\\")
-        tex.append(r"\midrule")
+        # Build the dynamic alignment string (e.g., 'll ccc' for 2 row headers + N model columns)
+        align_str = "ll " + "c" * num_models
 
-        # Alphabetically sort the detected models to keep things predictable
-        for model_name in sorted(matrix.keys()):
-            tex.append(f"\n% --- {model_name.upper()} ---")
+        tex = []
+        tex.append(r"\begingroup")
+        
+        # --- THE SIZE & PADDING COMPRESSION FIXES ---
+        tex.append(r"\scriptsize")  # Scaled down to prevent horizontal text clipping
+        tex.append(r"\setlength{\tabcolsep}{3pt} % Squeezes column margins tightly together")
+        
+        # Open the longtable environment
+        tex.append(f"\\begin{{longtable}}{{{align_str}}}")
+        
+        # --- FIRST PAGE HEADER ---
+        tex.append(r"\caption{Comprehensive Evaluation Summary of Symbol Error Rate (SER) Metrics} \\")
+        tex.append(r"\label{tab:portrait_multi_page_results} \\")
+        tex.append(r"\toprule")
+        tex.append(f"\\textbf{{$N$}} & \\textbf{{$\mu$}} & {model_headers} \\\\")
+        tex.append(r"\midrule")
+        tex.append(r"\endfirsthead")
+        
+        # --- RUNNING HEADERS FOR PAGES 2+ ---
+        tex.append(r"\caption[]{\textit{Continued from previous page}} \\")
+        tex.append(r"\toprule")
+        tex.append(f"\\textbf{{$N$}} & \\textbf{{$\mu$}} & {model_headers} \\\\")
+        tex.append(r"\midrule")
+        tex.append(r"\endhead")
+        
+        # --- RUNNING FOOTERS ---
+        tex.append(r"\midrule")
+        tex.append(r"\multicolumn{" + str(num_models + 2) + r"}{r}{\textit{Continued on next page...}} \\")
+        tex.append(r"\endfoot")
+        
+        # --- FINAL FOOTER ---
+        tex.append(r"\bottomrule")
+        tex.append(r"\endlastfoot")
+
+        # --- DATA GENERATION LOOP WITH ACTIVE FILTERING ---
+        for length in self.target_lengths:
+            valid_rows_in_block = []
             
-            # Escape strings like underscores safely for LaTeX rendering stability
-            escaped_model_name = model_name.replace("_", r"\_")
-            
-            # Print row loops per structural design spec block
-            for row_idx, redundancy in enumerate(self.target_redundancies):
+            # Step 1: Pre-scan all redundancies for this length block
+            for redundancy in self.target_redundancies:
                 row_cells = []
+                has_real_data = False
                 
-                for length in self.target_lengths:
+                for model_name in sorted_models:
                     val = matrix[model_name].get((length, redundancy), "")
+                    if val != "":
+                        has_real_data = True
+                        
                     row_cells.append(val)
                 
+                # Only keep this row if at least one model has valid metrics
+                if has_real_data:
+                    valid_rows_in_block.append((redundancy, row_cells))
+            
+            # Step 2: Skip the entire length block if it has absolutely no data
+            if not valid_rows_in_block:
+                logger.info(f"Skipping entire length block N={length} because all rows are empty.")
+                continue
+                
+            # Step 3: Write the rows using a dynamic multirow count
+            tex.append(f"% --- Length Block: {length} ---")
+            dynamic_span_count = len(valid_rows_in_block)
+            
+            for row_idx, (redundancy, row_cells) in enumerate(valid_rows_in_block):
                 row_data_str = " & ".join(row_cells)
                 
-                # Dynamic multirow row-spanning size matching the length of your redundancies array (12)
+                # The multirow bracket matches exactly how many rows survived filtering
                 if row_idx == 0:
-                    prefix = f"\\multirow{{{num_redundancies}}}{{*}}{{{escaped_model_name}}}"
+                    prefix = f"\\multirow{{{dynamic_span_count}}}{{*}}{{{length}}}"
                 else:
                     prefix = ""
-                    
-                tex.append(f"{prefix:<40} & R{redundancy:<2} & {row_data_str} \\\\")
+                
+                tex.append(f"{prefix:<25} & {redundancy:<10} & {row_data_str} \\\\")
             
-            tex.append(r"\midrule")
-            
-        if tex[-1] == r"\midrule":
+            # FIXED: Changed line span from 2-... to 2-... so the line breaks cleanly between the columns
+            tex.append(r"\cmidrule(lr){1-2} \cmidrule(lr){2-" + str(num_models + 2) + "}")
+                
+        # Clean up trailing line dividers
+        if tex[-1].startswith(r"\cmidrule"):
             tex.pop()
 
-        tex.append(r"\bottomrule")
-        tex.append(r"\end{tabular}%")
-        tex.append(r"}")
+        tex.append(r"\end{longtable}")
+        
         tex.append(r"\begin{flushleft}")
-        tex.append(r"\small \textit{Note:} Data cells are formatted as \textbf{Mean SER / Median SER / Best-Case SER}.")
+        tex.append(r"\scriptsize \textit{Note:} Data cells are formatted as \textbf{Mean SER / Median SER / Best-Case SER}.")
         tex.append(r"\end{flushleft}")
-        tex.append(r"\end{sidewaystable}")
+        tex.append(r"\endgroup")
 
         return "\n".join(tex)
 
