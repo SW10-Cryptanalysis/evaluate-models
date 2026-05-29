@@ -84,8 +84,7 @@ class TableGenerator:
         Groups Lengths vertically with multirow, automatically filtering out 
         rows where all models contain empty ('---') data.
         
-        Optimized with \scriptsize and tight \tabcolsep padding to prevent
-        horizontal page margin overflow.
+        Guarantees that a multirow length block will NEVER be split across pages.
         """
         if not matrix:
             logger.error(f"Unable to generate LaTeX string: No matrix data was resolved from '{self.base_dir}'.")
@@ -99,15 +98,12 @@ class TableGenerator:
         escaped_models = [m.replace("_", r"\_") for m in sorted_models]
         model_headers = " & ".join([f"\\textbf{{{m}}}" for m in escaped_models])
         
-        # Build the dynamic alignment string (e.g., 'll ccc' for 2 row headers + N model columns)
-        align_str = "ll " + "c" * num_models
+        # Build the dynamic alignment string with explicit ultra-tight 3pt horizontal spacing
+        align_str = "ll " + "".join([r"@{\hspace{3pt}}c" for _ in range(num_models)])
 
         tex = []
         tex.append(r"\begingroup")
-        
-        # --- THE SIZE & PADDING COMPRESSION FIXES ---
-        tex.append(r"\scriptsize")  # Scaled down to prevent horizontal text clipping
-        tex.append(r"\setlength{\tabcolsep}{3pt} % Squeezes column margins tightly together")
+        tex.append(r"\tiny")  
         
         # Open the longtable environment
         tex.append(f"\\begin{{longtable}}{{{align_str}}}")
@@ -121,7 +117,6 @@ class TableGenerator:
         tex.append(r"\endfirsthead")
         
         # --- RUNNING HEADERS FOR PAGES 2+ ---
-        tex.append(r"\caption[]{\textit{Continued from previous page}} \\")
         tex.append(r"\toprule")
         tex.append(f"\\textbf{{$N$}} & \\textbf{{$\mu$}} & {model_headers} \\\\")
         tex.append(r"\midrule")
@@ -136,7 +131,7 @@ class TableGenerator:
         tex.append(r"\bottomrule")
         tex.append(r"\endlastfoot")
 
-        # --- DATA GENERATION LOOP WITH ACTIVE FILTERING ---
+        # --- DATA GENERATION LOOP WITH BLOCK-BREAK PROTECTION ---
         for length in self.target_lengths:
             valid_rows_in_block = []
             
@@ -149,38 +144,43 @@ class TableGenerator:
                     val = matrix[model_name].get((length, redundancy), "")
                     if val != "":
                         has_real_data = True
-                        
                     row_cells.append(val)
                 
-                # Only keep this row if at least one model has valid metrics
                 if has_real_data:
                     valid_rows_in_block.append((redundancy, row_cells))
             
-            # Step 2: Skip the entire length block if it has absolutely no data
+            # Step 2: Skip block if empty
             if not valid_rows_in_block:
                 logger.info(f"Skipping entire length block N={length} because all rows are empty.")
                 continue
                 
-            # Step 3: Write the rows using a dynamic multirow count
-            tex.append(f"% --- Length Block: {length} ---")
+            # Step 3: Write out protected block rows
+            tex.append(f"% --- Protected Length Block: {length} ---")
             dynamic_span_count = len(valid_rows_in_block)
             
             for row_idx, (redundancy, row_cells) in enumerate(valid_rows_in_block):
                 row_data_str = " & ".join(row_cells)
                 
-                # The multirow bracket matches exactly how many rows survived filtering
                 if row_idx == 0:
                     prefix = f"\\multirow{{{dynamic_span_count}}}{{*}}{{{length}}}"
                 else:
                     prefix = ""
                 
-                tex.append(f"{prefix:<25} & {redundancy:<10} & {row_data_str} \\\\")
+                # --- THE FIX PART A: Inject page-break suppression inside the multirow block ---
+                # \\* instead of \\ explicitly forbids LaTeX from breaking a page after this specific row.
+                # If it's the absolute last row of this block, we allow a clean break (using regular \\).
+                is_last_row = (row_idx == dynamic_span_count - 1)
+                row_ending = r"\\" if is_last_row else r"\\*"
+                
+                tex.append(f"{prefix:<25} & {redundancy:<10} & {row_data_str} {row_ending}")
             
-            # FIXED: Changed line span from 2-... to 2-... so the line breaks cleanly between the columns
+            # --- THE FIX PART B: Attach the cmidrule border tightly to the block ---
+            # Using \nopagebreak ensures the section underline doesn't orphan away from its parent rows
+            tex.append(r"\nopagebreak")
             tex.append(r"\cmidrule(lr){1-2} \cmidrule(lr){2-" + str(num_models + 2) + "}")
                 
         # Clean up trailing line dividers
-        if tex[-1].startswith(r"\cmidrule"):
+        if tex[-1].startswith(r"\cmidrule") or tex[-1].startswith(r"\nopagebreak"):
             tex.pop()
 
         tex.append(r"\end{longtable}")

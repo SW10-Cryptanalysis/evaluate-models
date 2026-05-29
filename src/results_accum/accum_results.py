@@ -20,7 +20,7 @@ class ResultsAggregator:
 
     def __init__(
         self,
-        base_dir: str | Path = "outputs",
+        base_dir: str,
     ) -> None:
         """
         Initializes the aggregator with configuration rules.
