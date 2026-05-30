@@ -60,7 +60,9 @@ class ResultsAggregator:
                         if redundancy is None or ser is None or plaintext is None:
                             continue
                             
-                        actual_length = len(plaintext)
+                        clean_plaintext = plaintext.replace("_", "")
+                        actual_length = len(clean_plaintext)
+                        
                         binned_length = self.find_nearest_baseline(actual_length)
                         
                         data_groups[(binned_length, redundancy)].append(float(ser))

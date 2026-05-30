@@ -136,7 +136,7 @@ def main() -> None:
 
     plt.tight_layout()
 
-    output_image_path = eval_file.with_name("evaluation_graphs.png")
+    output_image_path = eval_file.with_name("evaluation_graphs.pdf")
     plt.savefig(output_image_path, dpi=300, bbox_inches="tight")
     logger.info(f"Graphs successfully generated and saved to:\n{output_image_path}")
 

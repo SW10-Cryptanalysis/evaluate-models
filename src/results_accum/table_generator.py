@@ -70,21 +70,22 @@ class TableGenerator:
                             )
                             continue
 
-                        cell_value = f"{mean_ser:.2f} / {median_ser:.2f} / {best_ser:.2f}"
-                        matrix[model_label][(int(length), int(redundancy))] = cell_value
+                        matrix[model_label][(int(length), int(redundancy))] = (float(mean_ser), float(median_ser), float(best_ser))
                         
             except Exception as e:
                 logger.error(f"Failed parsing data inside {file_path}: {e}")
                 
         return matrix
 
-    def generate_tex_string(self, matrix: Dict[str, Dict[Tuple[int, int], str]]) -> str:
+    def generate_tex_string(self, matrix: Dict[str, Dict[Tuple[int, int], Tuple[float, float, float]]]) -> str:
         """
         Assembles data into a portrait multi-page table utilizing longtable.
         Groups Lengths vertically with multirow, automatically filtering out 
-        rows where all models contain empty ('---') data.
+        rows where all models contain empty data.
         
-        Guarantees that a multirow length block will NEVER be split across pages.
+        Compares all models per row using RAW unrounded float values: 
+        Bolds the true lowest SER metric, underlines the true second lowest.
+        Formats numbers to 2 decimal places wrapped in \texttt{}, preserving standard text slashes.
         """
         if not matrix:
             logger.error(f"Unable to generate LaTeX string: No matrix data was resolved from '{self.base_dir}'.")
@@ -109,8 +110,8 @@ class TableGenerator:
         tex.append(f"\\begin{{longtable}}{{{align_str}}}")
         
         # --- FIRST PAGE HEADER ---
-        tex.append(r"\caption{Comprehensive Evaluation Summary of Symbol Error Rate (SER) Metrics} \\")
-        tex.append(r"\label{tab:portrait_multi_page_results} \\")
+        tex.append(r"\caption{Models Symbol Error Rate Comparison} \\")
+        tex.append(r"\label{tab:results-table} \\")
         tex.append(r"\toprule")
         tex.append(f"\\textbf{{$N$}} & \\textbf{{$\mu$}} & {model_headers} \\\\")
         tex.append(r"\midrule")
@@ -131,25 +132,79 @@ class TableGenerator:
         tex.append(r"\bottomrule")
         tex.append(r"\endlastfoot")
 
-        # --- DATA GENERATION LOOP WITH BLOCK-BREAK PROTECTION ---
+        # --- DATA GENERATION LOOP WITH ACTIVE COMPARATIVE FORMATTING ---
         for length in self.target_lengths:
             valid_rows_in_block = []
             
-            # Step 1: Pre-scan all redundancies for this length block
             for redundancy in self.target_redundancies:
-                row_cells = []
+                row_raw_tuples = []
                 has_real_data = False
                 
+                # Fetch the precision float tuples from the matrix
                 for model_name in sorted_models:
-                    val = matrix[model_name].get((length, redundancy), "")
-                    if val != "":
+                    val_tuple = matrix[model_name].get((length, redundancy), None)
+                    if val_tuple is not None:
                         has_real_data = True
-                    row_cells.append(val)
+                    row_raw_tuples.append(val_tuple)
                 
-                if has_real_data:
-                    valid_rows_in_block.append((redundancy, row_cells))
+                if not has_real_data:
+                    continue
+
+                # Isolate full-precision lists for independent column-wise processing
+                means, medians, bests = [], [], []
+                for t in row_raw_tuples:
+                    if t is not None:
+                        means.append(t[0])
+                        medians.append(t[1])
+                        bests.append(t[2])
+                    else:
+                        means.append(float('inf'))
+                        medians.append(float('inf'))
+                        bests.append(float('inf'))
+
+                # Helper to grab precise 1st and 2nd rank targets
+                def get_top_two_ranks(pool: List[float]) -> Tuple[float, float]:
+                    valid_nums = sorted([v for v in pool if v != float('inf')])
+                    if not valid_nums:
+                        return float('inf'), float('inf')
+                    first = valid_nums[0]
+                    second = next((v for v in valid_nums if v > first), float('inf'))
+                    return first, second
+
+                # Compute the TRUE mathematical winners using absolute raw accuracy values
+                min_mean, sec_mean = get_top_two_ranks(means)
+                min_med, sec_med = get_top_two_ranks(medians)
+                min_bst, sec_bst = get_top_two_ranks(bests)
+
+                row_cells = []
+                for idx, t in enumerate(row_raw_tuples):
+                    if t is None:
+                        # Ensures the empty row placeholders match the typewriter aesthetic
+                        row_cells.append("")
+                        continue
+                    
+                    # Rule processing helper: Compares absolute precision values,
+                    # wraps style macros, and applies \texttt{} to the final output number string.
+                    def format_metric(num: float, gold: float, silver: float) -> str:
+                        display_str = f"{num:.2f}"
+                        if num == gold:
+                            styled = f"\\textbf{{{display_str}}}"
+                        elif num == silver:
+                            styled = f"\\underline{{{display_str}}}"
+                        else:
+                            styled = display_str
+                        
+                        # --- THE FIX: Wrap the final styled item cleanly inside texttt ---
+                        return f"\\texttt{{{styled}}}"
+
+                    f_mean = format_metric(means[idx], min_mean, sec_mean)
+                    f_med  = format_metric(medians[idx], min_med, sec_med)
+                    f_bst  = format_metric(bests[idx], min_bst, sec_bst)
+                    
+                    row_cells.append(f"{f_mean} / {f_med} / {f_bst}")
+                
+                valid_rows_in_block.append((redundancy, row_cells))
             
-            # Step 2: Skip block if empty
             if not valid_rows_in_block:
                 logger.info(f"Skipping entire length block N={length} because all rows are empty.")
                 continue
@@ -166,32 +221,26 @@ class TableGenerator:
                 else:
                     prefix = ""
                 
-                # --- THE FIX PART A: Inject page-break suppression inside the multirow block ---
-                # \\* instead of \\ explicitly forbids LaTeX from breaking a page after this specific row.
-                # If it's the absolute last row of this block, we allow a clean break (using regular \\).
                 is_last_row = (row_idx == dynamic_span_count - 1)
                 row_ending = r"\\" if is_last_row else r"\\*"
                 
                 tex.append(f"{prefix:<25} & {redundancy:<10} & {row_data_str} {row_ending}")
             
-            # --- THE FIX PART B: Attach the cmidrule border tightly to the block ---
-            # Using \nopagebreak ensures the section underline doesn't orphan away from its parent rows
             tex.append(r"\nopagebreak")
             tex.append(r"\cmidrule(lr){1-2} \cmidrule(lr){2-" + str(num_models + 2) + "}")
                 
-        # Clean up trailing line dividers
         if tex[-1].startswith(r"\cmidrule") or tex[-1].startswith(r"\nopagebreak"):
             tex.pop()
 
         tex.append(r"\end{longtable}")
         
         tex.append(r"\begin{flushleft}")
-        tex.append(r"\scriptsize \textit{Note:} Data cells are formatted as \textbf{Mean SER / Median SER / Best-Case SER}.")
+        tex.append(r"\scriptsize \textit{Note:} Data cells are formatted as \textbf{Mean SER / Median SER / Best-Case SER}. ")
         tex.append(r"\end{flushleft}")
         tex.append(r"\endgroup")
 
         return "\n".join(tex)
-
+    
     def run(self) -> None:
         """Orchestrates reading the data logs and exporting the unified TeX asset file."""
         if not self.base_dir.exists() or not self.base_dir.is_dir():

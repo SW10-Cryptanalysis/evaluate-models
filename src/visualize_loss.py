@@ -126,7 +126,7 @@ def main() -> None:
 
     build_loss_plots(args.title, train_epochs, train_losses, val_epochs, val_losses)
 
-    output_image_path = state_file.with_name("loss_curves.png")
+    output_image_path = state_file.with_name("loss_curves.pdf")
     plt.savefig(output_image_path, dpi=300, bbox_inches="tight")
     plt.close()
 

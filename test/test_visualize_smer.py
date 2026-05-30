@@ -44,7 +44,7 @@ class TestVisualizeSmer:
 
         assert mock_savefig.called
         args, _ = mock_savefig.call_args
-        assert "smer_visualization.png" in str(args[0])
+        assert "smer_visualization.pdf" in str(args[0])
 
     def test_main_handles_missing_file(self, mocker, tmp_path):
         """Test that missing smer_results.jsonl logs an error and exits."""
